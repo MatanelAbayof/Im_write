@@ -2,23 +2,64 @@ from keras.preprocessing.image import ImageDataGenerator
 import numpy as np
 import scipy.io
 import os
+from os import listdir
+from os.path import isfile, join
 from keras.models import Sequential
 from keras.layers import Conv2D, MaxPooling2D
 from keras.layers import Activation, Dropout, Flatten, Dense
+import matplotlib.pyplot as plt
+import matplotlib.image as mpimg
+from PIL import Image
 
 print("Hello DL project!")
 
-img_positions_dir = r'data/5_DataDarkLines'
+original_img_dir = 'data\\0_Images'
+original_img_test_dir = join(original_img_dir, 'test')
+img_positions_dir = 'data\\5_DataDarkLines'
+
+w = 4964
+h = 7020
+
+def fix_img_line_names():
+    files = [f for f in listdir(img_positions_dir) if isfile(join(img_positions_dir, f))]
+    for idx, old_file_name in enumerate(files):
+        file_name = '{}.mat'.format(idx+1)
+        old_file = join(img_positions_dir, old_file_name)
+        new_file = join(img_positions_dir, file_name)
+        os.rename(old_file, new_file)
 
 
-def load_img_line_info(img_num: int, line_num: int):
-    file_name = 'lines{0}_Page_{1}'.format(img_num, str(line_num).zfill(2))
+def load_img_line_info(img_num: int):
+    file_name = '{}.mat'.format(img_num)
     file_path = os.path.join(img_positions_dir, file_name)
     return scipy.io.loadmat(file_path)
 
-
-line_info = load_img_line_info(img_num=1, line_num=1)
+img_num = 2
+line_info = load_img_line_info(img_num=img_num)
 print('line info = ', line_info)
+
+top_test_area = line_info['top_test_area'].flatten()[0]
+bottom_test_area = line_info['bottom_test_area'].flatten()[0]
+
+
+img_path = join(original_img_dir, 'lines1_Page_02.jpg')
+img = Image.open(img_path)
+'''
+plt.imshow(img)
+plt.plot(np.arange(0, w), np.array([top_test_area]*w))
+plt.plot(np.arange(0, w), np.array([bottom_test_area]*w))
+plt.show()
+'''
+
+test_img = img.crop(box=(0, top_test_area, w, bottom_test_area))
+plt.imshow(test_img)
+plt.show()
+
+test_img_file_path = join(original_img_test_dir, '{}.jpg'.format(img_num))
+test_img.save(test_img_file_path)
+#fix_img_line_names()
+
+
 
 exit()
 # create a data generator
