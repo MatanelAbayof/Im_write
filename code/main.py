@@ -9,18 +9,32 @@ from keras.layers import Conv2D, MaxPooling2D
 from keras.layers import Activation, Dropout, Flatten, Dense
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
-from PIL import Image
+from PIL import Image, ImageOps
+from tensorflow.keras import layers, models, optimizers
 
 print("Hello DL project!")
 
 original_img_dir = 'data\\0_Images'
+original_img_train_dir = join(original_img_dir, 'train')
 original_img_test_dir = join(original_img_dir, 'test')
 img_positions_dir = 'data\\5_DataDarkLines'
+
+img_directories = [original_img_dir]
 
 w = 4964
 h = 7020
 
-def fix_img_line_names():
+
+
+
+def fix_img_names():
+    for directory in img_directories:
+        files = [f for f in listdir(directory) if isfile(join(directory, f))]
+        for idx, old_file_name in enumerate(files):
+            file_name = '{}.jpg'.format(idx+1)
+            old_file = join(directory, old_file_name)
+            new_file = join(directory, file_name)
+            os.rename(old_file, new_file)
     files = [f for f in listdir(img_positions_dir) if isfile(join(img_positions_dir, f))]
     for idx, old_file_name in enumerate(files):
         file_name = '{}.mat'.format(idx+1)
@@ -34,82 +48,106 @@ def load_img_line_info(img_num: int):
     file_path = os.path.join(img_positions_dir, file_name)
     return scipy.io.loadmat(file_path)
 
+#fix_img_names()
+#exit()
+
+
+'''
 img_num = 2
 line_info = load_img_line_info(img_num=img_num)
 print('line info = ', line_info)
+
+peaks_indices = line_info['peaks_indices'].flatten()
+SCALE_FACTOR = line_info['SCALE_FACTOR'].flatten()[0]
+
+y_positions = peaks_indices*SCALE_FACTOR
+print('y_positions = ', y_positions)
+
 
 top_test_area = line_info['top_test_area'].flatten()[0]
 bottom_test_area = line_info['bottom_test_area'].flatten()[0]
 
 
-img_path = join(original_img_dir, 'lines1_Page_02.jpg')
+img_path = join(original_img_dir, '{}.jpg'.format(img_num))
 img = Image.open(img_path)
 '''
+
+'''
 plt.imshow(img)
-plt.plot(np.arange(0, w), np.array([top_test_area]*w))
-plt.plot(np.arange(0, w), np.array([bottom_test_area]*w))
+
+for y_pos in y_positions:
+    plt.plot(np.arange(0, w), np.array([y_pos]*w))
+
+
+#plt.plot(np.arange(0, w), np.array([top_test_area]*w))
+#plt.plot(np.arange(0, w), np.array([bottom_test_area]*w))
 plt.show()
 '''
 
+max_train_line_h = 200  # TODO:
+
+'''
+for idx in range(len(y_positions) - 1):
+    if y_positions[idx + 1] < top_test_area or y_positions[idx] > bottom_test_area:
+        sub_img = img.crop(box=(0, y_positions[idx], w, y_positions[idx+1]))
+        file_name = '{0}_{1}.jpg'.format(img_num, idx+1)
+        sub_img_file_path = original_img_train_dir + '/' + str(img_num) + '/' + file_name
+        new_img = ImageOps.pad(sub_img, size=(w, max_train_line_h), color=(0xFF, 0xFF, 0xFF))
+        new_img.save(sub_img_file_path)
+        #plt.imshow(sub_img)
+        #plt.show()
+
+
 test_img = img.crop(box=(0, top_test_area, w, bottom_test_area))
-plt.imshow(test_img)
-plt.show()
+#plt.imshow(test_img)
+#plt.show()
 
 test_img_file_path = join(original_img_test_dir, '{}.jpg'.format(img_num))
 test_img.save(test_img_file_path)
-#fix_img_line_names()
+'''
 
 
-
-exit()
 # create a data generator
-datagen = ImageDataGenerator()
-dataset_dir = r'data\0_Images'
-dataset = datagen.flow_from_directory(dataset_dir, class_mode='binary', batch_size=64)
+train_gen = ImageDataGenerator()
+train_dataset = train_gen.flow_from_directory(original_img_train_dir, class_mode='categorical', batch_size=2)
 
-num_of_writers = 407
-y_true = np.arange(num_of_writers)
+#num_of_writers = 204
 
-n_train_samples = 133
+
+def build_y_true():
+    y_true = []
+    files = [f for f in listdir(original_img_train_dir) if isfile(join(original_img_train_dir, f))]
+    for file in files:
+        last_pos = file.index('_')
+        img_num = int(file[:last_pos])
+        y_true.append(img_num)
+    return y_true
+
+
+#y_true = build_y_true()
+#print('y_true=', y_true)
+#n_of_cls = len(set(y_true))
+
+'''
+n_train_samples = num_of_writers // 2
 n_validation_samples = 133
 n_test_samples = num_of_writers - n_validation_samples - n_train_samples
+'''
 epochs = 10
-batch_size = 5
+batch_size = 2
+learning_rate = 0.01
 
-img_width = 5000
-img_height = 7000
-input_shape = (img_width, img_height, 3)
+input_shape = (w, max_train_line_h, 3)
+print('input_shape = ', input_shape)
 
-"""
-model = Sequential()
-model.add(Conv2D(32, (3, 3), input_shape=input_shape))
-model.add(Activation('relu'))
-model.add(MaxPooling2D(pool_size=(2, 2)))
+model = models.Sequential()
 
-model.add(Conv2D(32, (3, 3)))
-model.add(Activation('relu'))
-model.add(MaxPooling2D(pool_size=(2, 2)))
+model.add(layers.Dense(10, activation='relu', input_shape=input_shape))
+model.add(layers.Dense(2, activation='softmax'))
 
-model.add(Conv2D(64, (3, 3)))
-model.add(Activation('relu'))
-model.add(MaxPooling2D(pool_size=(2, 2)))
-
-model.add(Flatten())
-model.add(Dense(64))
-model.add(Activation('relu'))
-model.add(Dropout(0.5))
-model.add(Dense(1))
-model.add(Activation('sigmoid'))
-
-model.compile(loss='binary_crossentropy',
-              optimizer='rmsprop',
+opt = optimizers.Adam(lr=learning_rate)
+model.compile(optimizer=opt, loss='categorical_crossentropy',
               metrics=['accuracy'])
 
+model.fit(train_dataset, epochs=epochs, batch_size=batch_size)
 
-model.fit_generator(
-    train_generator,
-    steps_per_epoch=n_train_samples // batch_size,
-    epochs=epochs,
-    validation_data=validation_generator,
-    validation_steps=n_validation_samples // batch_size)
-"""
