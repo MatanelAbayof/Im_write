@@ -11,112 +11,132 @@ import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 from PIL import Image, ImageOps
 from tensorflow.keras import layers, models, optimizers
+from pathlib import Path
 
-print("Hello DL project!")
+IMG_ROOT_DIR = 'data'
+ORIGINAL_IMG_DIR = join(IMG_ROOT_DIR, '0_Images')
+ORIGINAL_IMG_TRAIN_DIR = join(ORIGINAL_IMG_DIR, 'train')
+ORIGINAL_IMG_TEST_DIR = join(ORIGINAL_IMG_DIR, 'test')
+IMG_POSITIONS_DIR = join(IMG_ROOT_DIR, '5_DataDarkLines')
 
-original_img_dir = 'data\\0_Images'
-original_img_train_dir = join(original_img_dir, 'train')
-original_img_test_dir = join(original_img_dir, 'test')
-img_positions_dir = 'data\\5_DataDarkLines'
+IMG_DIRECTORIES = [ORIGINAL_IMG_DIR, IMG_POSITIONS_DIR]  # TODO: do this for each images directories
 
-img_directories = [original_img_dir]
-
-w = 4964
-h = 7020
-
-
+ORIGINAL_IMG_W = 4964
+ORIGINAL_IMG_H = 7020
+TRAIN_DATASET_RANGE = range(1, 204)
 
 
+# -------------------------------------------------------------------------------------------------------------
 def fix_img_names():
-    for directory in img_directories:
+    for dir_idx, directory in enumerate(IMG_DIRECTORIES):
+        file_ext = 'mat' if (dir_idx == len(IMG_DIRECTORIES) - 1) else 'jpg'
         files = [f for f in listdir(directory) if isfile(join(directory, f))]
         for idx, old_file_name in enumerate(files):
-            file_name = '{}.jpg'.format(idx+1)
+            file_name = '{0}.{1}'.format(idx + 1, file_ext)
             old_file = join(directory, old_file_name)
             new_file = join(directory, file_name)
             os.rename(old_file, new_file)
-    files = [f for f in listdir(img_positions_dir) if isfile(join(img_positions_dir, f))]
-    for idx, old_file_name in enumerate(files):
-        file_name = '{}.mat'.format(idx+1)
-        old_file = join(img_positions_dir, old_file_name)
-        new_file = join(img_positions_dir, file_name)
-        os.rename(old_file, new_file)
 
 
-def load_img_line_info(img_num: int):
+# -------------------------------------------------------------------------------------------------------------
+def load_img(img_num: int):
+    img_path = join(ORIGINAL_IMG_DIR, '{}.jpg'.format(img_num))
+    return Image.open(img_path)
+
+
+# -------------------------------------------------------------------------------------------------------------
+def load_img_lines_info(img_num: int):
     file_name = '{}.mat'.format(img_num)
-    file_path = os.path.join(img_positions_dir, file_name)
+    file_path = os.path.join(IMG_POSITIONS_DIR, file_name)
     return scipy.io.loadmat(file_path)
 
-#fix_img_names()
-#exit()
+
+# -------------------------------------------------------------------------------------------------------------
+def build_all_train_dataset():
+    for img_num in TRAIN_DATASET_RANGE:
+        build_train_dataset_img(img_num)
 
 
-'''
-img_num = 2
-line_info = load_img_line_info(img_num=img_num)
-print('line info = ', line_info)
+# -------------------------------------------------------------------------------------------------------------
+def build_train_dataset_img(img_num: int):
+    print('building train dataset image num {}'.format(img_num))
 
-peaks_indices = line_info['peaks_indices'].flatten()
-SCALE_FACTOR = line_info['SCALE_FACTOR'].flatten()[0]
+    line_info = load_img_lines_info(img_num=img_num)
+    peaks_indices = line_info['peaks_indices'].flatten()
+    scale_factor = line_info['SCALE_FACTOR'].flatten()[0]
+    y_positions = peaks_indices * scale_factor
+    top_test_area = line_info['top_test_area'].flatten()[0]
+    bottom_test_area = line_info['bottom_test_area'].flatten()[0]
+    img = load_img(img_num)
 
-y_positions = peaks_indices*SCALE_FACTOR
-print('y_positions = ', y_positions)
+    max_train_line_h = 200  # TODO: load maximum line height at all images files
 
+    sub_img_dir = join(ORIGINAL_IMG_TRAIN_DIR, str(img_num))
+    Path(sub_img_dir).mkdir(parents=True, exist_ok=True)
 
-top_test_area = line_info['top_test_area'].flatten()[0]
-bottom_test_area = line_info['bottom_test_area'].flatten()[0]
-
-
-img_path = join(original_img_dir, '{}.jpg'.format(img_num))
-img = Image.open(img_path)
-'''
-
-'''
-plt.imshow(img)
-
-for y_pos in y_positions:
-    plt.plot(np.arange(0, w), np.array([y_pos]*w))
-
-
-#plt.plot(np.arange(0, w), np.array([top_test_area]*w))
-#plt.plot(np.arange(0, w), np.array([bottom_test_area]*w))
-plt.show()
-'''
-
-max_train_line_h = 200  # TODO:
-
-'''
-for idx in range(len(y_positions) - 1):
-    if y_positions[idx + 1] < top_test_area or y_positions[idx] > bottom_test_area:
-        sub_img = img.crop(box=(0, y_positions[idx], w, y_positions[idx+1]))
-        file_name = '{0}_{1}.jpg'.format(img_num, idx+1)
-        sub_img_file_path = original_img_train_dir + '/' + str(img_num) + '/' + file_name
-        new_img = ImageOps.pad(sub_img, size=(w, max_train_line_h), color=(0xFF, 0xFF, 0xFF))
-        new_img.save(sub_img_file_path)
-        #plt.imshow(sub_img)
-        #plt.show()
+    for idx in range(len(y_positions) - 1):  # TODO: need also filter empty lines
+        if y_positions[idx + 1] < top_test_area or y_positions[idx] > bottom_test_area:
+            sub_img = img.crop(box=(0, y_positions[idx], ORIGINAL_IMG_W, y_positions[idx + 1]))
+            file_name = '{0}_{1}.jpg'.format(img_num, idx + 1)
+            sub_img_file_path = join(sub_img_dir, file_name)
+            new_img = ImageOps.pad(sub_img, size=(ORIGINAL_IMG_W, max_train_line_h), color=(0xFF, 0xFF, 0xFF))
+            new_img.save(sub_img_file_path)
 
 
-test_img = img.crop(box=(0, top_test_area, w, bottom_test_area))
-#plt.imshow(test_img)
-#plt.show()
+# -------------------------------------------------------------------------------------------------------------
+def build_all_test_dataset():
+    for img_num in TRAIN_DATASET_RANGE:
+        build_test_dataset_img(img_num)
 
-test_img_file_path = join(original_img_test_dir, '{}.jpg'.format(img_num))
-test_img.save(test_img_file_path)
-'''
 
+# -------------------------------------------------------------------------------------------------------------
+def build_test_dataset_img(img_num: int):
+    print('building test dataset image num {}'.format(img_num))
+
+    line_info = load_img_lines_info(img_num=img_num)
+    top_test_area = line_info['top_test_area'].flatten()[0]
+    bottom_test_area = line_info['bottom_test_area'].flatten()[0]
+    img = load_img(img_num)
+    test_img = img.crop(box=(0, top_test_area, ORIGINAL_IMG_W, bottom_test_area))
+    # TODO: need to pad image with `max_test_line_h`
+    test_img_file_path = join(ORIGINAL_IMG_TEST_DIR, '{}.jpg'.format(img_num))  # TODO: save in nested folder `img_name`
+    test_img.save(test_img_file_path)
+
+
+is_fix_img_names = False
+is_build_train_dataset = False
+is_build_test_dataset = False
+
+print("Start project")
+
+if is_fix_img_names:
+    print('fixing images names...')
+    fix_img_names()
+    print('finish fix images names successfully')
+
+if is_build_train_dataset:
+    print('building train dataset...')
+    build_all_train_dataset()
+    print('train dataset has built successfully')
+
+if is_build_test_dataset:
+    print('building test dataset...')
+    build_all_train_dataset()
+    print('test dataset has built successfully')
+
+exit()
 
 # create a data generator
 train_gen = ImageDataGenerator()
-train_dataset = train_gen.flow_from_directory(original_img_train_dir, class_mode='categorical', batch_size=2)
+train_dataset = train_gen.flow_from_directory(ORIGINAL_IMG_TRAIN_DIR, class_mode='categorical', batch_size=2)
 
-#num_of_writers = 204
+
+# num_of_writers = 204
 
 
 def build_y_true():
     y_true = []
-    files = [f for f in listdir(original_img_train_dir) if isfile(join(original_img_train_dir, f))]
+    files = [f for f in listdir(ORIGINAL_IMG_TRAIN_DIR) if isfile(join(ORIGINAL_IMG_TRAIN_DIR, f))]
     for file in files:
         last_pos = file.index('_')
         img_num = int(file[:last_pos])
@@ -124,9 +144,9 @@ def build_y_true():
     return y_true
 
 
-#y_true = build_y_true()
-#print('y_true=', y_true)
-#n_of_cls = len(set(y_true))
+# y_true = build_y_true()
+# print('y_true=', y_true)
+# n_of_cls = len(set(y_true))
 
 '''
 n_train_samples = num_of_writers // 2
@@ -137,17 +157,16 @@ epochs = 10
 batch_size = 2
 learning_rate = 0.01
 
-input_shape = (w, max_train_line_h, 3)
+input_shape = (ORIGINAL_IMG_W, max_train_line_h, 3)
 print('input_shape = ', input_shape)
 
 model = models.Sequential()
 
 model.add(layers.Dense(10, activation='relu', input_shape=input_shape))
-model.add(layers.Dense(2, activation='softmax'))
+model.add(layers.Dense(2, activation='softmax'))  # TODO: `units` must be number of classes
 
 opt = optimizers.Adam(lr=learning_rate)
 model.compile(optimizer=opt, loss='categorical_crossentropy',
               metrics=['accuracy'])
 
 model.fit(train_dataset, epochs=epochs, batch_size=batch_size)
-
