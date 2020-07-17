@@ -16,27 +16,43 @@ from tensorflow.keras import layers, models, optimizers
 import shutil
 import time
 
-#region Global variables
+# region Global variables
 CURRENT_DIR = os.path.dirname(__file__)
 WORKING_DIR = Path(CURRENT_DIR).parent
 os.chdir(WORKING_DIR)
 
 IMG_ROOT_DIR = 'data'
 ORIGINAL_IMG_DIR = join(IMG_ROOT_DIR, '0_Images')
+ROTATED_IMG_DIR = join(IMG_ROOT_DIR, '1_ImagesRotated')
+MEDIAN_IMG_DIR = join(IMG_ROOT_DIR, '2_ImagesMedianBW')
+LINES_REMOVED_BW_IMG_DIR = join(IMG_ROOT_DIR, '3_ImagesLinesRemovedBW')
+LINES_REMOVED_IMG_DIR = join(IMG_ROOT_DIR, '4_ImagesLinesRemoved')
+
 ORIGINAL_IMG_TRAIN_DIR = join(ORIGINAL_IMG_DIR, 'train')
 ORIGINAL_IMG_TEST_DIR = join(ORIGINAL_IMG_DIR, 'test')
 IMG_POSITIONS_DIR = join(IMG_ROOT_DIR, '5_DataDarkLines')
-IMG_DIRECTORIES = [ORIGINAL_IMG_DIR, IMG_POSITIONS_DIR]  # TODO: do this for each images directories
+IMG_DIRECTORIES = [ORIGINAL_IMG_DIR, IMG_POSITIONS_DIR]  # TODO: do this for each images directories (IMG_POSITIONS_DIR must be the last item)
 
 ORIGINAL_IMG_W = 4964
 ORIGINAL_IMG_H = 7020
-TRAIN_DATASET_RANGE = range(1, 204)
+TRAIN_DATASET_RANGE = range(1, 3)  # TODO: change `stop` to 204
 MAX_TRAIN_LINE_H = 205
 MAX_TEST_LINE_H = 220
 MAX_LINE_H = max(MAX_TRAIN_LINE_H, MAX_TEST_LINE_H)
-#endregion
 
-#region Functions
+
+# endregion
+
+# region Functions
+# -------------------------------------------------------------------------------------------------------------
+def is_white_img(img: Image): # TODO: fix this function
+    inv_img = ImageOps.invert(img)
+    print('inv_img = ', inv_img)
+    white_box = inv_img.getbbox()
+    print('bbox = ', white_box)
+    return white_box
+
+
 # -------------------------------------------------------------------------------------------------------------
 def find_max_train_line_h():
     lines_h = []
@@ -45,10 +61,11 @@ def find_max_train_line_h():
         line_info = load_img_lines_info(img_num)
         y_positions = parse_y_positions(line_info)
         for idx in range(len(y_positions) - 1):
-            line_h = y_positions[idx+1] - y_positions[idx]
+            line_h = y_positions[idx + 1] - y_positions[idx]
             lines_h.append(line_h)
     print('lines height = ', lines_h)
     return max(lines_h)
+
 
 # -------------------------------------------------------------------------------------------------------------
 def find_max_test_line_h():
@@ -63,6 +80,7 @@ def find_max_test_line_h():
     print('lines height = ', lines_h)
     return max(lines_h)
 
+
 # -------------------------------------------------------------------------------------------------------------
 def fix_img_names():
     for dir_idx, directory in enumerate(IMG_DIRECTORIES):
@@ -75,16 +93,19 @@ def fix_img_names():
             new_file = join(directory, file_name)
             os.rename(old_file, new_file)
 
+
 # -------------------------------------------------------------------------------------------------------------
 def load_img(img_num: int):
     img_path = join(ORIGINAL_IMG_DIR, '{}.jpg'.format(img_num))
     return Image.open(img_path)
+
 
 # -------------------------------------------------------------------------------------------------------------
 def load_img_lines_info(img_num: int):
     file_name = '{}.mat'.format(img_num)
     file_path = os.path.join(IMG_POSITIONS_DIR, file_name)
     return scipy.io.loadmat(file_path)
+
 
 # -------------------------------------------------------------------------------------------------------------
 def build_all_train_dataset():
@@ -96,12 +117,14 @@ def build_all_train_dataset():
     for img_num in TRAIN_DATASET_RANGE:
         build_train_dataset_img(img_num)
 
+
 # -------------------------------------------------------------------------------------------------------------
 def parse_y_positions(line_info):
     peaks_indices = line_info['peaks_indices'].flatten()
     scale_factor = line_info['SCALE_FACTOR'].flatten()[0]
     y_positions = peaks_indices * scale_factor
     return y_positions
+
 
 # -------------------------------------------------------------------------------------------------------------
 def build_train_dataset_img(img_num: int):
@@ -124,6 +147,7 @@ def build_train_dataset_img(img_num: int):
             new_img = ImageOps.pad(sub_img, size=(ORIGINAL_IMG_W, MAX_LINE_H), color=(0xFF, 0xFF, 0xFF))
             new_img.save(sub_img_file_path)
 
+
 # -------------------------------------------------------------------------------------------------------------
 def build_all_test_dataset():
     # removing directory
@@ -133,6 +157,7 @@ def build_all_test_dataset():
 
     for img_num in TRAIN_DATASET_RANGE:
         build_test_dataset_img(img_num)
+
 
 # -------------------------------------------------------------------------------------------------------------
 def build_test_dataset_img(img_num: int):
@@ -146,6 +171,7 @@ def build_test_dataset_img(img_num: int):
     # TODO: need to pad image with `max_test_line_h`
     test_img_file_path = join(ORIGINAL_IMG_TEST_DIR, '{}.jpg'.format(img_num))  # TODO: save in nested folder `img_name`
     test_img.save(test_img_file_path)
+
 
 # -------------------------------------------------------------------------------------------------------------
 def use_clf():
@@ -174,11 +200,20 @@ def use_clf():
 
     opt = optimizers.Adam(lr=learning_rate)
     model.compile(optimizer=opt, loss='categorical_crossentropy',
-                metrics=['accuracy'])
+                  metrics=['accuracy'])
 
-    model.fit(train_dataset, epochs=epochs, batch_size=batch_size) # don't need use deprecated function `fit_generator`
-#endregion
+    model.fit(train_dataset, epochs=epochs, batch_size=batch_size)  # don't need use deprecated function `fit_generator`
 
+
+# endregion
+
+'''
+img_path = join(ORIGINAL_IMG_TRAIN_DIR, '1/1_6.jpg')
+img = Image.open(img_path)
+res = is_white_img(img)
+print('res = ', res)
+exit()
+'''
 
 is_find_max_train_line_h = False
 is_find_max_test_line_h = False
@@ -190,7 +225,7 @@ is_use_clf = True
 print("Start project")
 start_time = time.time()
 
-#region Tasks
+# region Tasks
 if is_find_max_train_line_h:
     print('find maximum train line height...')
     max_train_line_h = find_max_train_line_h()
@@ -220,9 +255,9 @@ if is_use_clf:
     print('using classifier...')
     use_clf()
     print('finish use classifier successfully')
-#endregion
+# endregion
 
 end_time = time.time()
-elapsed_time = end_time - start_time 
+elapsed_time = end_time - start_time
 print('elapsed time = {:.3f} sec'.format(elapsed_time))
 print('finish!')
