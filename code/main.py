@@ -1,3 +1,4 @@
+import math
 import os, sys
 from os import listdir
 from os.path import isfile, join
@@ -31,7 +32,8 @@ LINES_REMOVED_IMG_DIR = join(IMG_ROOT_DIR, '4_ImagesLinesRemoved')
 ORIGINAL_IMG_TRAIN_DIR = join(ORIGINAL_IMG_DIR, 'train')
 ORIGINAL_IMG_TEST_DIR = join(ORIGINAL_IMG_DIR, 'test')
 IMG_POSITIONS_DIR = join(IMG_ROOT_DIR, '5_DataDarkLines')
-IMG_DIRECTORIES = [ORIGINAL_IMG_DIR, IMG_POSITIONS_DIR]  # TODO: do this for each images directories (IMG_POSITIONS_DIR must be the last item)
+IMG_DIRECTORIES = [ORIGINAL_IMG_DIR,
+                   IMG_POSITIONS_DIR]  # TODO: do this for each images directories (IMG_POSITIONS_DIR must be the last item)
 
 ORIGINAL_IMG_W = 4964
 ORIGINAL_IMG_H = 7020
@@ -45,7 +47,7 @@ MAX_LINE_H = max(MAX_TRAIN_LINE_H, MAX_TEST_LINE_H)
 
 # region Functions
 # -------------------------------------------------------------------------------------------------------------
-def is_white_img(img: Image): # TODO: fix this function
+def is_white_img(img: Image):  # TODO: fix this function
     inv_img = ImageOps.invert(img)
     print('inv_img = ', inv_img)
     white_box = inv_img.getbbox()
@@ -175,33 +177,52 @@ def build_test_dataset_img(img_num: int):
 
 # -------------------------------------------------------------------------------------------------------------
 def use_clf():
+    img_scale = 0.5
+    target_size = (math.floor(float(ORIGINAL_IMG_W)*img_scale), math.floor(float(MAX_LINE_H)*img_scale))
+    print('target_size = ', target_size)
     # create a data generator
-    train_gen = ImageDataGenerator()
-    train_dataset = train_gen.flow_from_directory(ORIGINAL_IMG_TRAIN_DIR, class_mode='categorical', batch_size=2)
+    train_gen = ImageDataGenerator()  # TODO: use `rotation_range` &  `width_shift_range` & `height_shift_range`
+    train_dataset = train_gen.flow_from_directory(ORIGINAL_IMG_TRAIN_DIR, target_size=target_size,
+                                                  class_mode='categorical', batch_size=2)
 
-    # num_of_writers = 204
+    num_of_cls = 5
 
     '''
     n_train_samples = num_of_writers // 2
     n_validation_samples = 133
     n_test_samples = num_of_writers - n_validation_samples - n_train_samples
     '''
-    epochs = 10
+    epochs = 2
     batch_size = 2
     learning_rate = 0.01
 
-    input_shape = (ORIGINAL_IMG_W, max_train_line_h, 3)
+    input_shape = (*target_size, 3)
     print('input_shape = ', input_shape)
 
     model = models.Sequential()
+    '''
+    model.add(layers.Dense(32, activation='relu', input_shape=input_shape))
+    model.add(layers.Dense(num_of_writers, activation='softmax'))  # TODO: `units` must be number of classes
+    '''
 
-    model.add(layers.Dense(10, activation='relu', input_shape=input_shape))
-    model.add(layers.Dense(2, activation='softmax'))  # TODO: `units` must be number of classes
+    model.add(layers.Conv2D(32, (3, 3), activation='relu',
+                            input_shape=input_shape))
+    model.add(layers.MaxPooling2D((2, 2)))
+    model.add(layers.Conv2D(64, (3, 3), activation='relu'))
+    model.add(layers.MaxPooling2D((2, 2)))
+    model.add(layers.Conv2D(128, (3, 3), activation='relu'))
+    model.add(layers.MaxPooling2D((2, 2)))
+    model.add(layers.Conv2D(128, (3, 3), activation='relu'))
+    model.add(layers.MaxPooling2D((2, 2)))
+    model.add(layers.Flatten())
+    model.add(layers.Dense(512, activation='relu'))
+    model.add(layers.Dense(num_of_cls, activation='softmax'))
 
-    opt = optimizers.Adam(lr=learning_rate)
-    model.compile(optimizer=opt, loss='categorical_crossentropy',
-                  metrics=['accuracy'])
+    model.compile(loss='categorical_crossentropy',
+                  optimizer=optimizers.RMSprop(lr=learning_rate),
+                  metrics=['acc'])
 
+    # TODO: use `validation_data` & `validation_steps`
     model.fit(train_dataset, epochs=epochs, batch_size=batch_size)  # don't need use deprecated function `fit_generator`
 
 
