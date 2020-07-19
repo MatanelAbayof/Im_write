@@ -28,12 +28,8 @@ ROTATED_IMG_DIR = join(IMG_ROOT_DIR, '1_ImagesRotated')
 MEDIAN_IMG_DIR = join(IMG_ROOT_DIR, '2_ImagesMedianBW')
 LINES_REMOVED_BW_IMG_DIR = join(IMG_ROOT_DIR, '3_ImagesLinesRemovedBW')
 LINES_REMOVED_IMG_DIR = join(IMG_ROOT_DIR, '4_ImagesLinesRemoved')
-
-ORIGINAL_IMG_TRAIN_DIR = join(ORIGINAL_IMG_DIR, 'train')
-ORIGINAL_IMG_TEST_DIR = join(ORIGINAL_IMG_DIR, 'test')
 IMG_POSITIONS_DIR = join(IMG_ROOT_DIR, '5_DataDarkLines')
-IMG_DIRECTORIES = [ORIGINAL_IMG_DIR,
-                   IMG_POSITIONS_DIR]  # TODO: do this for each images directories (IMG_POSITIONS_DIR must be the last item)
+IMG_DIRECTORIES = [ORIGINAL_IMG_DIR, LINES_REMOVED_BW_IMG_DIR, IMG_POSITIONS_DIR]  # TODO: do this for each images directories (IMG_POSITIONS_DIR must be the last item)
 
 ORIGINAL_IMG_W = 4964
 ORIGINAL_IMG_H = 7020
@@ -47,12 +43,15 @@ MAX_LINE_H = max(MAX_TRAIN_LINE_H, MAX_TEST_LINE_H)
 
 # region Functions
 # -------------------------------------------------------------------------------------------------------------
-def is_white_img(img: Image):  # TODO: fix this function
-    inv_img = ImageOps.invert(img)
-    print('inv_img = ', inv_img)
-    white_box = inv_img.getbbox()
-    print('bbox = ', white_box)
-    return white_box
+def is_white_img(img: Image): # TODO: improve
+    imageSizeW, imageSizeH = img.size
+    nonWhitePixels = []  
+    for i in range(1, imageSizeW):
+        for j in range(1, imageSizeH):
+            pixVal = img.getpixel((i, j))
+            if pixVal != (255, 255, 255):
+                nonWhitePixels.append(pixVal)
+    return len(nonWhitePixels) < 10000
 
 
 # -------------------------------------------------------------------------------------------------------------
@@ -60,7 +59,7 @@ def find_max_train_line_h():
     lines_h = []
     for img_num in TRAIN_DATASET_RANGE:
         print('checking image number ', img_num)
-        line_info = load_img_lines_info(img_num)
+        line_info = load_img_lines_info(img_num=img_num)
         y_positions = parse_y_positions(line_info)
         for idx in range(len(y_positions) - 1):
             line_h = y_positions[idx + 1] - y_positions[idx]
@@ -97,8 +96,8 @@ def fix_img_names():
 
 
 # -------------------------------------------------------------------------------------------------------------
-def load_img(img_num: int):
-    img_path = join(ORIGINAL_IMG_DIR, '{}.jpg'.format(img_num))
+def load_img(dir: str = ORIGINAL_IMG_DIR, img_num: int = 1):
+    img_path = join(dir, '{}.jpg'.format(img_num))
     return Image.open(img_path)
 
 
@@ -110,14 +109,15 @@ def load_img_lines_info(img_num: int):
 
 
 # -------------------------------------------------------------------------------------------------------------
-def build_all_train_dataset():
+def build_all_train_dataset(img_dir: str):
+    train_dir = get_train_dir(img_dir)
     # removing directory
-    shutil.rmtree(ORIGINAL_IMG_TRAIN_DIR)
+    shutil.rmtree(train_dir, ignore_errors=True)
     # create an empty directory
-    Path(ORIGINAL_IMG_TRAIN_DIR).mkdir(parents=True, exist_ok=True)
+    Path(train_dir).mkdir(parents=True, exist_ok=True)
 
     for img_num in TRAIN_DATASET_RANGE:
-        build_train_dataset_img(img_num)
+        build_train_dataset_img(img_dir=img_dir, img_num=img_num)
 
 
 # -------------------------------------------------------------------------------------------------------------
@@ -129,93 +129,113 @@ def parse_y_positions(line_info):
 
 
 # -------------------------------------------------------------------------------------------------------------
-def build_train_dataset_img(img_num: int):
+def get_train_dir(img_dir: str):
+    return join(img_dir, 'train')
+
+# -------------------------------------------------------------------------------------------------------------
+def get_test_dir(img_dir: str):
+    return join(img_dir, 'test')
+
+# -------------------------------------------------------------------------------------------------------------
+def build_train_dataset_img(img_dir: str, img_num: int):
     print('building train dataset image num {}'.format(img_num))
+
+    train_dir = get_train_dir(img_dir)
 
     line_info = load_img_lines_info(img_num=img_num)
     y_positions = parse_y_positions(line_info)
     top_test_area = line_info['top_test_area'].flatten()[0]
     bottom_test_area = line_info['bottom_test_area'].flatten()[0]
-    img = load_img(img_num)
+    img = load_img(dir=img_dir, img_num=img_num)
 
-    sub_img_dir = join(ORIGINAL_IMG_TRAIN_DIR, str(img_num))
+    sub_img_dir = join(train_dir, str(img_num))
     Path(sub_img_dir).mkdir(parents=True, exist_ok=True)
 
-    for idx in range(len(y_positions) - 1):  # TODO: need also filter empty lines
+    for idx in range(len(y_positions) - 1):
         if y_positions[idx + 1] < top_test_area or y_positions[idx] > bottom_test_area:
             sub_img = img.crop(box=(0, y_positions[idx], ORIGINAL_IMG_W, y_positions[idx + 1]))
             file_name = '{0}_{1}.jpg'.format(img_num, idx + 1)
             sub_img_file_path = join(sub_img_dir, file_name)
-            new_img = ImageOps.pad(sub_img, size=(ORIGINAL_IMG_W, MAX_LINE_H), color=(0xFF, 0xFF, 0xFF))
-            new_img.save(sub_img_file_path)
+            new_img = ImageOps.pad(sub_img.convert("RGB"), size=(ORIGINAL_IMG_W, MAX_LINE_H), color=(0xFF, 0xFF, 0xFF))
+            if not is_white_img(new_img):
+                new_img.save(sub_img_file_path)
 
 
 # -------------------------------------------------------------------------------------------------------------
-def build_all_test_dataset():
+def build_all_test_dataset(img_dir: str):
+    test_dir = get_test_dir(img_dir)
     # removing directory
-    shutil.rmtree(ORIGINAL_IMG_TEST_DIR)
+    shutil.rmtree(test_dir, ignore_errors=True)
     # create an empty directory
-    Path(ORIGINAL_IMG_TEST_DIR).mkdir(parents=True, exist_ok=True)
+    Path(test_dir).mkdir(parents=True, exist_ok=True)
 
     for img_num in TRAIN_DATASET_RANGE:
-        build_test_dataset_img(img_num)
+        build_test_dataset_img(img_dir=img_dir, img_num=img_num)
 
 
 # -------------------------------------------------------------------------------------------------------------
-def build_test_dataset_img(img_num: int):
+def build_test_dataset_img(img_dir: str, img_num: int):
     print('building test dataset image num {}'.format(img_num))
+
+    test_dir = get_test_dir(img_dir)
 
     line_info = load_img_lines_info(img_num=img_num)
     top_test_area = line_info['top_test_area'].flatten()[0]
     bottom_test_area = line_info['bottom_test_area'].flatten()[0]
-    img = load_img(img_num)
+    img = load_img(dir=img_dir, img_num=img_num)
     test_img = img.crop(box=(0, top_test_area, ORIGINAL_IMG_W, bottom_test_area))
-    # TODO: need to pad image with `max_test_line_h`
-    test_img_file_path = join(ORIGINAL_IMG_TEST_DIR, '{}.jpg'.format(img_num))  # TODO: save in nested folder `img_name`
-    test_img.save(test_img_file_path)
+    pad_test_img = ImageOps.pad(test_img.convert("RGB"), size=(ORIGINAL_IMG_W, MAX_LINE_H), color=(0xFF, 0xFF, 0xFF))
+    test_img_dir_path = join(test_dir, str(img_num))
+    Path(test_img_dir_path).mkdir(parents=True, exist_ok=True)
+    test_img_file_path = join(test_img_dir_path, '{}.jpg'.format(img_num))  # TODO: save in nested folder `img_name`
+    if not is_white_img(pad_test_img):
+        pad_test_img.save(test_img_file_path)
 
 
 # -------------------------------------------------------------------------------------------------------------
-def use_clf():
-    img_scale = 0.5
+def use_clf(img_dir: str):
+    train_dir = get_train_dir(img_dir)
+
+    img_scale = 1.
     target_size = (math.floor(float(ORIGINAL_IMG_W)*img_scale), math.floor(float(MAX_LINE_H)*img_scale))
     print('target_size = ', target_size)
-    # create a data generator
-    train_gen = ImageDataGenerator()  # TODO: use `rotation_range` &  `width_shift_range` & `height_shift_range`
-    train_dataset = train_gen.flow_from_directory(ORIGINAL_IMG_TRAIN_DIR, target_size=target_size,
-                                                  class_mode='categorical', batch_size=2)
 
-    num_of_cls = 5
+    # create a data generator
+    shift_side_px = 20
+    train_gen = ImageDataGenerator(rotation_range=2, width_shift_range=shift_side_px, height_shift_range=shift_side_px)
+    train_dataset = train_gen.flow_from_directory(train_dir, target_size=target_size,
+                                                  class_mode='categorical', batch_size=2)
+    #TODO: add validation_gen, test_gen
+
+    num_of_cls = len(train_dataset.class_indices)
+    sample_count = len(train_dataset.filenames)
+
 
     '''
     n_train_samples = num_of_writers // 2
     n_validation_samples = 133
     n_test_samples = num_of_writers - n_validation_samples - n_train_samples
     '''
-    epochs = 2
+    epochs = 3
     batch_size = 2
-    learning_rate = 0.01
+    learning_rate = 0.001
+    steps_per_epoch = sample_count // num_of_cls
 
     input_shape = (*target_size, 3)
     print('input_shape = ', input_shape)
 
     model = models.Sequential()
-    '''
-    model.add(layers.Dense(32, activation='relu', input_shape=input_shape))
-    model.add(layers.Dense(num_of_writers, activation='softmax'))  # TODO: `units` must be number of classes
-    '''
-
     model.add(layers.Conv2D(32, (3, 3), activation='relu',
                             input_shape=input_shape))
+    model.add(layers.MaxPooling2D((4, 4)))
+    model.add(layers.Conv2D(16, (3, 3), activation='relu'))
+    model.add(layers.MaxPooling2D((4, 4)))
+    model.add(layers.Conv2D(16, (3, 3), activation='relu'))
     model.add(layers.MaxPooling2D((2, 2)))
-    model.add(layers.Conv2D(64, (3, 3), activation='relu'))
-    model.add(layers.MaxPooling2D((2, 2)))
-    model.add(layers.Conv2D(128, (3, 3), activation='relu'))
-    model.add(layers.MaxPooling2D((2, 2)))
-    model.add(layers.Conv2D(128, (3, 3), activation='relu'))
+    model.add(layers.Conv2D(16, (3, 3), activation='relu'))
     model.add(layers.MaxPooling2D((2, 2)))
     model.add(layers.Flatten())
-    model.add(layers.Dense(512, activation='relu'))
+    model.add(layers.Dense(32, activation='relu'))
     model.add(layers.Dense(num_of_cls, activation='softmax'))
 
     model.compile(loss='categorical_crossentropy',
@@ -223,7 +243,7 @@ def use_clf():
                   metrics=['acc'])
 
     # TODO: use `validation_data` & `validation_steps`
-    model.fit(train_dataset, epochs=epochs, batch_size=batch_size)  # don't need use deprecated function `fit_generator`
+    model.fit(train_dataset, epochs=epochs, batch_size=batch_size, steps_per_epoch=steps_per_epoch)  # don't need use deprecated function `fit_generator`
 
 
 # endregion
@@ -242,6 +262,7 @@ is_fix_img_names = False
 is_build_train_dataset = False
 is_build_test_dataset = False
 is_use_clf = True
+
 
 print("Start project")
 start_time = time.time()
@@ -264,17 +285,20 @@ if is_fix_img_names:
 
 if is_build_train_dataset:
     print('building train dataset...')
-    build_all_train_dataset()
+    build_img_dir = LINES_REMOVED_BW_IMG_DIR
+    build_all_train_dataset(build_img_dir)
     print('train dataset has built successfully')
 
 if is_build_test_dataset:
     print('building test dataset...')
-    build_all_train_dataset()
+    build_img_dir = LINES_REMOVED_BW_IMG_DIR
+    build_all_test_dataset(build_img_dir)
     print('test dataset has built successfully')
 
 if is_use_clf:
     print('using classifier...')
-    use_clf()
+    img_dir = LINES_REMOVED_BW_IMG_DIR
+    use_clf(img_dir)
     print('finish use classifier successfully')
 # endregion
 
