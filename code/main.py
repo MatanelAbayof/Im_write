@@ -19,6 +19,10 @@ from PIL import Image, ImageOps
 from tensorflow.keras import layers, models, optimizers
 import shutil
 import time
+from keras.optimizers import SGD
+#from convnetskeras.convnets import preprocess_image_batch
+#from convnetskeras.convnets import convnet
+from alex import AlexNet
 
 pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 
@@ -34,6 +38,7 @@ MEDIAN_IMG_DIR = join(IMG_ROOT_DIR, '2_ImagesMedianBW')
 LINES_REMOVED_BW_IMG_DIR = join(IMG_ROOT_DIR, '3_ImagesLinesRemovedBW')
 LINES_REMOVED_IMG_DIR = join(IMG_ROOT_DIR, '4_ImagesLinesRemoved')
 IMG_POSITIONS_DIR = join(IMG_ROOT_DIR, '5_DataDarkLines')
+ALEX_WEIGHTS_PATH = join(IMG_ROOT_DIR, 'alexnet_weights.h5')
 IMG_DIRECTORIES = [ORIGINAL_IMG_DIR, LINES_REMOVED_BW_IMG_DIR, IMG_POSITIONS_DIR]  # TODO: do this for each images directories (IMG_POSITIONS_DIR must be the last item)
 
 ORIGINAL_IMG_W = 4964
@@ -229,7 +234,10 @@ def use_clf(img_dir: str):
     input_shape = (*target_size, 3)
     print('input_shape = ', input_shape)
 
-    model = models.Sequential()
+    #model = models.Sequential()
+    model = AlexNet(weights_path=ALEX_WEIGHTS_PATH, heatmap=False)
+
+    '''
     model.add(layers.Conv2D(32, (3, 3), activation='relu',
                             input_shape=input_shape))
     model.add(layers.MaxPooling2D((4, 4)))
@@ -242,13 +250,14 @@ def use_clf(img_dir: str):
     model.add(layers.Flatten())
     model.add(layers.Dense(32, activation='relu'))
     model.add(layers.Dense(num_of_cls, activation='softmax'))
+    '''
 
     model.compile(loss='categorical_crossentropy',
                   optimizer=optimizers.RMSprop(lr=learning_rate),
                   metrics=['acc'])
 
     # TODO: use `validation_data` & `validation_steps`
-    model.fit(train_dataset, epochs=epochs, batch_size=batch_size, steps_per_epoch=steps_per_epoch)  # don't need use deprecated function `fit_generator`
+    #model.fit(train_dataset, epochs=epochs, batch_size=batch_size, steps_per_epoch=steps_per_epoch)  # don't need use deprecated function `fit_generator`
 
 
 # endregion
@@ -266,6 +275,7 @@ print("Start project")
 start_time = time.time()
 
 
+'''
 img_num = 1
 row_num = 2
 img_dir_path = join(get_train_dir(LINES_REMOVED_BW_IMG_DIR), str(img_num))
@@ -289,6 +299,7 @@ for i in range(n_boxes):
         #plt.show()
 
 exit()
+'''
 
 # region Tasks
 if is_find_max_train_line_h:
