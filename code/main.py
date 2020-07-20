@@ -184,6 +184,41 @@ def build_all_test_dataset(img_dir: str):
 
 
 # -------------------------------------------------------------------------------------------------------------
+def build_all_train_words_dataset(img_dir: str):
+    for img_num in TRAIN_DATASET_RANGE:
+        build_train_words_dataset_img(imgs_dir=img_dir, img_num=img_num)
+
+ # -------------------------------------------------------------------------------------------------------------
+def build_train_words_dataset_img(imgs_dir: str, img_num: int):
+    print('building image words for image num {}...'.format(img_num))
+    imgs_train_dir = get_train_dir(imgs_dir)
+    img_dir_path = join(imgs_train_dir, str(img_num))
+    lines_files_names = [f for f in listdir(img_dir_path) if isfile(join(img_dir_path, f))]
+    
+
+    img_words_path = join(img_dir_path, 'words')
+    shutil.rmtree(img_words_path, ignore_errors=True)
+    Path(img_words_path).mkdir(parents=True, exist_ok=True) 
+
+    for line_file_name in lines_files_names:
+        start_idx_line_n = line_file_name.index('_') + 1
+        end_idx_line_n = line_file_name.index('.')
+        row_num = line_file_name[start_idx_line_n:end_idx_line_n]
+        img_line_path = join(img_dir_path, '{0}_{1}.jpg'.format(img_num, row_num))
+        img_line = Image.open(img_line_path)
+        #img = cv2.imread(img_path)
+        img_line_data = pytesseract.image_to_data(img_line, output_type=Output.DICT)
+        n_boxes = len(img_line_data['word_num'])
+        for i in range(n_boxes):
+            if img_line_data['word_num'][i] > 0:
+                (x, y, w, h) = (img_line_data['left'][i], img_line_data['top'][i], img_line_data['width'][i], img_line_data['height'][i])
+                #new_img = cv2.rectangle(img, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                img_word = img_line.crop(box= (x, y, x+w, y+h))
+                img_word_path = join(img_words_path, '{0}_{1}_{2}.jpg'.format(img_num, row_num, i))
+                img_word.save(img_word_path)
+   
+
+# -------------------------------------------------------------------------------------------------------------
 def build_test_dataset_img(img_dir: str, img_num: int):
     print('building test dataset image num {}'.format(img_num))
 
@@ -268,35 +303,15 @@ is_find_max_test_line_h = False
 is_fix_img_names = False
 is_build_train_dataset = False
 is_build_test_dataset = False
-is_use_clf = True
-
+is_use_clf = False
+is_build_all_train_words_dataset = True
 
 print("Start project")
 start_time = time.time()
 
 
 '''
-img_num = 1
-row_num = 2
-img_dir_path = join(get_train_dir(LINES_REMOVED_BW_IMG_DIR), str(img_num))
-img_path = join(img_dir_path, '{0}_{1}.jpg'.format(img_num, row_num))
-img_words_path = join(img_dir_path, 'words')
-shutil.rmtree(img_words_path, ignore_errors=True)
-Path(img_words_path).mkdir(parents=True, exist_ok=True)
-real_img = Image.open(img_path)
-img = cv2.imread(img_path)
-#plt.imshow(real_img)
-d = pytesseract.image_to_data(img, output_type=Output.DICT)
-n_boxes = len(d['word_num'])
-for i in range(n_boxes):
-    if d['word_num'][i] > 0:
-        (x, y, w, h) = (d['left'][i], d['top'][i], d['width'][i], d['height'][i])
-        new_img = cv2.rectangle(img, (x, y), (x + w, y + h), (0, 255, 0), 2)
-        s_img = real_img.crop(box= (x, y, x+w, y+h))
-        sub_img_file_path = join(img_words_path, '{0}_{1}_{2}.jpg'.format(img_num, row_num, i))
-        s_img.save(sub_img_file_path)
-        #plt.imshow(s_img)
-        #plt.show()
+
 
 exit()
 '''
@@ -328,6 +343,12 @@ if is_build_test_dataset:
     build_img_dir = LINES_REMOVED_BW_IMG_DIR
     build_all_test_dataset(build_img_dir)
     print('test dataset has built successfully')
+
+if is_build_all_train_words_dataset:
+    print('building words of images dataset...')
+    build_img_dir = LINES_REMOVED_BW_IMG_DIR
+    build_all_train_words_dataset(build_img_dir)
+    print('train images words dataset has built successfully')
 
 if is_use_clf:
     print('using classifier...')
