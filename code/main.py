@@ -1,5 +1,8 @@
 import math
 import os, sys
+import pytesseract
+from pytesseract import Output
+import cv2
 from os import listdir
 from os.path import isfile, join
 from pathlib import Path
@@ -16,6 +19,8 @@ from PIL import Image, ImageOps
 from tensorflow.keras import layers, models, optimizers
 import shutil
 import time
+
+pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 
 # region Global variables
 CURRENT_DIR = os.path.dirname(__file__)
@@ -248,13 +253,6 @@ def use_clf(img_dir: str):
 
 # endregion
 
-'''
-img_path = join(ORIGINAL_IMG_TRAIN_DIR, '1/1_6.jpg')
-img = Image.open(img_path)
-res = is_white_img(img)
-print('res = ', res)
-exit()
-'''
 
 is_find_max_train_line_h = False
 is_find_max_test_line_h = False
@@ -266,6 +264,31 @@ is_use_clf = True
 
 print("Start project")
 start_time = time.time()
+
+
+img_num = 1
+row_num = 2
+img_dir_path = join(get_train_dir(LINES_REMOVED_BW_IMG_DIR), str(img_num))
+img_path = join(img_dir_path, '{0}_{1}.jpg'.format(img_num, row_num))
+img_words_path = join(img_dir_path, 'words')
+shutil.rmtree(img_words_path, ignore_errors=True)
+Path(img_words_path).mkdir(parents=True, exist_ok=True)
+real_img = Image.open(img_path)
+img = cv2.imread(img_path)
+#plt.imshow(real_img)
+d = pytesseract.image_to_data(img, output_type=Output.DICT)
+n_boxes = len(d['word_num'])
+for i in range(n_boxes):
+    if d['word_num'][i] > 0:
+        (x, y, w, h) = (d['left'][i], d['top'][i], d['width'][i], d['height'][i])
+        new_img = cv2.rectangle(img, (x, y), (x + w, y + h), (0, 255, 0), 2)
+        s_img = real_img.crop(box= (x, y, x+w, y+h))
+        sub_img_file_path = join(img_words_path, '{0}_{1}_{2}.jpg'.format(img_num, row_num, i))
+        s_img.save(sub_img_file_path)
+        #plt.imshow(s_img)
+        #plt.show()
+
+exit()
 
 # region Tasks
 if is_find_max_train_line_h:
