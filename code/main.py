@@ -50,6 +50,9 @@ MAX_LINE_H = max(MAX_TRAIN_LINE_H, MAX_TEST_LINE_H)
 MAX_WORD_W = 776
 MAX_WORD_H = 194
 
+MIN_WORD_W = 40
+MIN_WORD_H = 40
+
 
 # endregion
 
@@ -63,7 +66,7 @@ def is_white_img(img: Image): # TODO: improve
             pixVal = img.getpixel((i, j))
             if pixVal != (255, 255, 255):
                 nonWhitePixels.append(pixVal)
-    return len(nonWhitePixels) < 10000
+    return len(nonWhitePixels) < 2 * imageSizeW
 
 
 # -------------------------------------------------------------------------------------------------------------
@@ -216,8 +219,10 @@ def build_train_words_dataset_img(imgs_dir: str, img_num: int):
                 (x, y, w, h) = (img_line_data['left'][i], img_line_data['top'][i], img_line_data['width'][i], img_line_data['height'][i])
                 #new_img = cv2.rectangle(img, (x, y), (x + w, y + h), (0, 255, 0), 2)
                 img_word = img_line.crop(box= (x, y, x+w, y+h))
-                img_word_path = join(img_words_path, '{0}_{1}_{2}.jpg'.format(img_num, row_num, i))
-                img_word.save(img_word_path)
+                img_w, img_h = img_word.size
+                if (img_w >= MIN_WORD_W and img_h >= MIN_WORD_H) and not is_white_img(img_word):
+                    img_word_path = join(img_words_path, '{0}_{1}_{2}.jpg'.format(img_num, row_num, i))
+                    img_word.save(img_word_path)
 
 # -------------------------------------------------------------------------------------------------------------
 def for_each_img_word(dadaset_dir: str):
@@ -232,24 +237,18 @@ def for_each_img_word(dadaset_dir: str):
         for img_word_name in imgs_words_names:
             img_word_file_path = join(words_dir, img_word_name)
             img_word = Image.open(img_word_file_path)
-            yield img_word
+            yield img_word_file_path, img_word
 
 
 # -------------------------------------------------------------------------------------------------------------
 def find_max_word_size(imgs_dir: str):
     max_w, max_h = (0, 0)
     train_dir = get_train_dir(imgs_dir)
-    for img_word in for_each_img_word(train_dir):
+    for _, img_word in for_each_img_word(train_dir):
             img_w, img_h = img_word.size
             max_w = max(img_w, max_w)
             max_h = max(img_h, max_h)
     return max_w, max_h
-
-# -------------------------------------------------------------------------------------------------------------
-def pad_imgs_words(imgs_dir: str):
-    pass # TODO:
-   
-
 # -------------------------------------------------------------------------------------------------------------
 def build_test_dataset_img(img_dir: str, img_num: int):
     print('building test dataset image num {}'.format(img_num))
@@ -278,10 +277,10 @@ def use_clf(img_dir: str):
     print('target_size = ', target_size)
 
     # create a data generator
-    shift_side_px = 20
-    train_gen = ImageDataGenerator(rotation_range=2, width_shift_range=shift_side_px, height_shift_range=shift_side_px)
+    shift_side = 0.1
+    train_gen = ImageDataGenerator(rotation_range=2, width_shift_range=shift_side, height_shift_range=shift_side)
     train_dataset = train_gen.flow_from_directory(train_dir, target_size=target_size,
-                                                  class_mode='categorical', batch_size=2)
+                                                  class_mode='categorical', batch_size=1)
     #TODO: add validation_gen, test_gen
 
     num_of_cls = len(train_dataset.class_indices)
@@ -293,38 +292,48 @@ def use_clf(img_dir: str):
     n_validation_samples = 133
     n_test_samples = num_of_writers - n_validation_samples - n_train_samples
     '''
-    epochs = 3
-    batch_size = 2
-    learning_rate = 0.001
+    epochs = 2
+    batch_size = 1
+    learning_rate = 0.05
     steps_per_epoch = sample_count // num_of_cls
 
     input_shape = (*target_size, 3)
     print('input_shape = ', input_shape)
 
-    #model = models.Sequential()
-    model = AlexNet(weights_path=ALEX_WEIGHTS_PATH, heatmap=False)
+    model = models.Sequential()
+    #model = AlexNet(weights_path=ALEX_WEIGHTS_PATH, heatmap=False)
 
-    '''
-    model.add(layers.Conv2D(32, (3, 3), activation='relu',
+    model.add(layers.Conv2D(8, (24, 12), activation='relu',
                             input_shape=input_shape))
     model.add(layers.MaxPooling2D((4, 4)))
-    model.add(layers.Conv2D(16, (3, 3), activation='relu'))
+    model.add(layers.Conv2D(8, (6, 6), activation='relu'))
     model.add(layers.MaxPooling2D((4, 4)))
-    model.add(layers.Conv2D(16, (3, 3), activation='relu'))
+    model.add(layers.Conv2D(8, (3, 3), activation='relu'))
     model.add(layers.MaxPooling2D((2, 2)))
-    model.add(layers.Conv2D(16, (3, 3), activation='relu'))
+    model.add(layers.Conv2D(8, (3, 3), activation='relu'))
     model.add(layers.MaxPooling2D((2, 2)))
     model.add(layers.Flatten())
-    model.add(layers.Dense(32, activation='relu'))
+    model.add(layers.Dense(128, activation='relu'))
     model.add(layers.Dense(num_of_cls, activation='softmax'))
-    '''
+
+
+    model.summary()
+
 
     model.compile(loss='categorical_crossentropy',
                   optimizer=optimizers.RMSprop(lr=learning_rate),
                   metrics=['acc'])
 
     # TODO: use `validation_data` & `validation_steps`
-    #model.fit(train_dataset, epochs=epochs, batch_size=batch_size, steps_per_epoch=steps_per_epoch)  # don't need use deprecated function `fit_generator`
+    model.fit(train_dataset, epochs=epochs, batch_size=batch_size, steps_per_epoch=steps_per_epoch)  # don't need use deprecated function `fit_generator`
+
+# -------------------------------------------------------------------------------------------------------------
+def pad_imgs_words(imgs_dir: str):
+    train_dir = get_train_dir(imgs_dir)
+    for img_word_file_path, img_word in for_each_img_word(train_dir):
+        new_img = ImageOps.pad(img_word.convert("RGB"), size=(MAX_WORD_W, MAX_WORD_H), color=(0xFF, 0xFF, 0xFF))
+        img_word.close()
+        new_img.save(img_word_file_path)
 
 
 # endregion
@@ -335,9 +344,10 @@ is_find_max_test_line_h = False
 is_fix_img_names = False
 is_build_train_dataset = False
 is_build_test_dataset = False
-is_use_clf = False
+is_use_clf = True
 is_build_all_train_words_dataset = False
-is_find_max_word_size = True
+is_find_max_word_size = False
+is_pad_imgs_words = False
 
 print("Start project")
 start_time = time.time()
@@ -384,6 +394,12 @@ if is_find_max_word_size:
     print('maximum width is', max_w)
     print('maximum height is', max_h)
     print('maximum word size has found successfully')
+
+if is_pad_imgs_words:
+    print('padding images words...')
+    imgs_dir = LINES_REMOVED_BW_IMG_DIR
+    pad_imgs_words(imgs_dir)
+    print('finish pad images words successfully')
 
 if is_use_clf:
     print('using classifier...')
