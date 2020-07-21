@@ -4,7 +4,7 @@ import pytesseract
 from pytesseract import Output
 import cv2
 from os import listdir
-from os.path import isfile, join
+from os.path import isfile, join, isdir
 from pathlib import Path
 
 import matplotlib.image as mpimg
@@ -47,6 +47,8 @@ TRAIN_DATASET_RANGE = range(1, 3)  # TODO: change `stop` to 204
 MAX_TRAIN_LINE_H = 205
 MAX_TEST_LINE_H = 220
 MAX_LINE_H = max(MAX_TRAIN_LINE_H, MAX_TEST_LINE_H)
+MAX_WORD_W = 776
+MAX_WORD_H = 194
 
 
 # endregion
@@ -188,7 +190,7 @@ def build_all_train_words_dataset(img_dir: str):
     for img_num in TRAIN_DATASET_RANGE:
         build_train_words_dataset_img(imgs_dir=img_dir, img_num=img_num)
 
- # -------------------------------------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------------------------------------
 def build_train_words_dataset_img(imgs_dir: str, img_num: int):
     print('building image words for image num {}...'.format(img_num))
     imgs_train_dir = get_train_dir(imgs_dir)
@@ -216,6 +218,36 @@ def build_train_words_dataset_img(imgs_dir: str, img_num: int):
                 img_word = img_line.crop(box= (x, y, x+w, y+h))
                 img_word_path = join(img_words_path, '{0}_{1}_{2}.jpg'.format(img_num, row_num, i))
                 img_word.save(img_word_path)
+
+# -------------------------------------------------------------------------------------------------------------
+def for_each_img_word(dadaset_dir: str):
+    imgs_dirs_names = [d for d in listdir(dadaset_dir) if isdir(join(dadaset_dir, d))]
+    for img_dir_name in imgs_dirs_names:
+        print('scanning image number {}...'.format(img_dir_name))
+        img_dir = join(dadaset_dir, img_dir_name)
+        words_dir = join(img_dir, 'words')
+        if not os.path.exists(words_dir):
+            break
+        imgs_words_names = [f for f in listdir(words_dir) if isfile(join(words_dir, f))]
+        for img_word_name in imgs_words_names:
+            img_word_file_path = join(words_dir, img_word_name)
+            img_word = Image.open(img_word_file_path)
+            yield img_word
+
+
+# -------------------------------------------------------------------------------------------------------------
+def find_max_word_size(imgs_dir: str):
+    max_w, max_h = (0, 0)
+    train_dir = get_train_dir(imgs_dir)
+    for img_word in for_each_img_word(train_dir):
+            img_w, img_h = img_word.size
+            max_w = max(img_w, max_w)
+            max_h = max(img_h, max_h)
+    return max_w, max_h
+
+# -------------------------------------------------------------------------------------------------------------
+def pad_imgs_words(imgs_dir: str):
+    pass # TODO:
    
 
 # -------------------------------------------------------------------------------------------------------------
@@ -304,17 +336,12 @@ is_fix_img_names = False
 is_build_train_dataset = False
 is_build_test_dataset = False
 is_use_clf = False
-is_build_all_train_words_dataset = True
+is_build_all_train_words_dataset = False
+is_find_max_word_size = True
 
 print("Start project")
 start_time = time.time()
 
-
-'''
-
-
-exit()
-'''
 
 # region Tasks
 if is_find_max_train_line_h:
@@ -349,6 +376,14 @@ if is_build_all_train_words_dataset:
     build_img_dir = LINES_REMOVED_BW_IMG_DIR
     build_all_train_words_dataset(build_img_dir)
     print('train images words dataset has built successfully')
+
+if is_find_max_word_size:
+    print('find maximum word size...')
+    img_dir = LINES_REMOVED_BW_IMG_DIR
+    max_w, max_h = find_max_word_size(img_dir)
+    print('maximum width is', max_w)
+    print('maximum height is', max_h)
+    print('maximum word size has found successfully')
 
 if is_use_clf:
     print('using classifier...')
