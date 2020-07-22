@@ -20,6 +20,7 @@ from tensorflow.keras import layers, models, optimizers
 import shutil
 import time
 from keras.optimizers import SGD
+from keras.applications import VGG16, ResNet50
 
 pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 
@@ -270,6 +271,32 @@ def build_test_dataset_img(img_dir: str, img_num: int):
     test_img_file_path = join(test_img_dir_path, '{}.jpg'.format(img_num))  # TODO: save in nested folder `img_name`
     pad_test_img.save(test_img_file_path)
 
+# -------------------------------------------------------------------------------------------------------------
+def extract_features(directory, sample_count, datagen, batch_size, input_shape, target_size):
+
+    conv_base = VGG16(weights='imagenet',
+                      include_top=False,
+                      input_shape=input_shape)
+
+    conv_base.summary()
+
+    features = np.zeros(shape=(sample_count, 24, 6, 512))
+    labels = np.zeros(shape=(sample_count))
+    generator = datagen.flow_from_directory(
+        directory,
+        target_size=target_size,
+        batch_size=batch_size,
+        class_mode='binary')
+    i=0
+    for inputs_batch, labels_batch in generator:
+        features_batch = conv_base.predict(inputs_batch)
+        features[i * batch_size : (i + 1) * batch_size] = features_batch
+        labels[i * batch_size : (i + 1) * batch_size] = labels_batch
+        i += 1
+        print(i*batch_size, "    ",  sample_count)
+        if i * batch_size >= sample_count:
+            break
+    return features, labels
 
 # -------------------------------------------------------------------------------------------------------------
 def use_clf(img_dir: str):
@@ -293,16 +320,60 @@ def use_clf(img_dir: str):
     n_validation_samples = 133
     n_test_samples = num_of_writers - n_validation_samples - n_train_samples
     '''
-    epochs = 2
+    epochs = 20
     batch_size = 5
-    learning_rate = 0.001
+    learning_rate = 0.0005
     steps_per_epoch = sample_count // num_of_cls
 
     input_shape = (*target_size, 3)
     print('input_shape = ', input_shape)
 
     model = models.Sequential()
-    # model = AlexNet(weights_path=ALEX_WEIGHTS_PATH, heatmap=False)
+
+    
+    
+
+    #train_features, train_labels = extract_features(train_dir, sample_count, train_gen, batch_size, input_shape, target_size)
+
+    #np.save('train_features', train_features)
+    #np.save('train_labels', train_labels)
+
+    #exit()
+
+    train_features = np.load('train_features.npy')
+    train_labels = np.load('train_labels.npy')
+
+    train_features = np.reshape(train_features, (sample_count, 24 * 6 * 512))
+
+    model.add(layers.Dense(64, activation='relu', input_dim=24 * 6 * 512))
+    model.add(layers.Dense(64, activation='relu'))
+    model.add(layers.Dense(64, activation='relu'))
+    model.add(layers.Dense(64, activation='relu'))
+    #model.add(layers.Dropout(0.5))
+    model.add(Flatten())
+    model.add(layers.Dense(1, activation='sigmoid'))
+
+    model.summary()
+    
+    model.compile(loss='categorical_crossentropy',
+                  optimizer=optimizers.RMSprop(lr=learning_rate),
+                  metrics=['acc'])
+
+    #model.build(input_shape)
+
+    
+
+    
+    
+    history = model.fit(train_features, train_labels, epochs=epochs, batch_size=batch_size)
+
+    # TODO: use `validation_data` & `validation_steps`
+
+    '''
+
+    model.compile(loss='categorical_crossentropy',
+                  optimizer=optimizers.RMSprop(lr=learning_rate),
+                  metrics=['acc'])
 
     model.add(layers.Conv2D(128, (24, 12), activation='relu',
                             input_shape=input_shape))
@@ -317,15 +388,12 @@ def use_clf(img_dir: str):
     model.add(layers.Dense(256, activation='relu'))
     model.add(layers.Dense(num_of_cls, activation='softmax'))
 
-    model.summary()
-
-    model.compile(loss='categorical_crossentropy',
-                  optimizer=optimizers.RMSprop(lr=learning_rate),
-                  metrics=['acc'])
-
-    # TODO: use `validation_data` & `validation_steps`
+    
     model.fit(train_dataset, epochs=epochs, batch_size=batch_size,
               steps_per_epoch=steps_per_epoch)  # don't need use deprecated function `fit_generator`
+    '''
+
+    
 
 
 # -------------------------------------------------------------------------------------------------------------
