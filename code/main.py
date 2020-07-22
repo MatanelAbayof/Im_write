@@ -29,6 +29,9 @@ CURRENT_DIR = os.path.dirname(__file__)
 WORKING_DIR = Path(CURRENT_DIR).parent
 os.chdir(WORKING_DIR)
 
+TRAIN_FEATURES_FILE_NAME = "train_features"
+TRAIN_LABELS_FILE_NAME = "train_labels"
+
 IMG_ROOT_DIR = 'data'
 ORIGINAL_IMG_DIR = join(IMG_ROOT_DIR, '0_Images')
 ROTATED_IMG_DIR = join(IMG_ROOT_DIR, '1_ImagesRotated')
@@ -57,15 +60,15 @@ MIN_WORD_H = 40
 
 # region Functions
 # -------------------------------------------------------------------------------------------------------------
-def is_white_img(img: Image):  # TODO: improve
-    imageSizeW, imageSizeH = img.size
-    nonWhitePixels = []
-    for i in range(1, imageSizeW):
-        for j in range(1, imageSizeH):
-            pixVal = img.getpixel((i, j))
-            if pixVal != (255, 255, 255):
-                nonWhitePixels.append(pixVal)
-    return len(nonWhitePixels) < 2 * imageSizeW
+def is_white_img(img: Image):  # TODO: improve run time
+    img_w, img_h = img.size
+    not_white_pixels = []
+    for i in range(1, img_w):
+        for j in range(1, img_h):
+            pixel = img.getpixel((i, j))
+            if pixel != (255, 255, 255):
+                not_white_pixels.append(pixel)
+    return len(not_white_pixels) < 2 * img_w
 
 
 # -------------------------------------------------------------------------------------------------------------
@@ -131,7 +134,7 @@ def build_all_train_dataset(img_dir: str):
     Path(train_dir).mkdir(parents=True, exist_ok=True)
 
     for img_num in TRAIN_DATASET_RANGE:
-        build_train_dataset_img(img_dir=img_dir, img_num=img_num)
+        build_train_dataset_img(imgs_dir=img_dir, img_num=img_num)
 
 
 # -------------------------------------------------------------------------------------------------------------
@@ -153,16 +156,16 @@ def get_test_dir(img_dir: str):
 
 
 # -------------------------------------------------------------------------------------------------------------
-def build_train_dataset_img(img_dir: str, img_num: int):
+def build_train_dataset_img(imgs_dir: str, img_num: int):
     print('building train dataset image num {}'.format(img_num))
 
-    train_dir = get_train_dir(img_dir)
+    train_dir = get_train_dir(imgs_dir)
 
     line_info = load_img_lines_info(img_num=img_num)
     y_positions = parse_y_positions(line_info)
     top_test_area = line_info['top_test_area'].flatten()[0]
     bottom_test_area = line_info['bottom_test_area'].flatten()[0]
-    img = load_img(dir=img_dir, img_num=img_num)
+    img = load_img(dir=imgs_dir, img_num=img_num)
 
     sub_img_dir = join(train_dir, str(img_num))
     Path(sub_img_dir).mkdir(parents=True, exist_ok=True)
@@ -178,21 +181,21 @@ def build_train_dataset_img(img_dir: str, img_num: int):
 
 
 # -------------------------------------------------------------------------------------------------------------
-def build_all_test_dataset(img_dir: str):
-    test_dir = get_test_dir(img_dir)
+def build_all_test_dataset(imgs_dir: str):
+    test_dir = get_test_dir(imgs_dir)
     # removing directory
     shutil.rmtree(test_dir, ignore_errors=True)
     # create an empty directory
     Path(test_dir).mkdir(parents=True, exist_ok=True)
 
     for img_num in TRAIN_DATASET_RANGE:
-        build_test_dataset_img(img_dir=img_dir, img_num=img_num)
+        build_test_dataset_img(img_dir=imgs_dir, img_num=img_num)
 
 
 # -------------------------------------------------------------------------------------------------------------
-def build_all_train_words_dataset(img_dir: str):
+def build_all_train_words_dataset(imgs_dir: str):
     for img_num in TRAIN_DATASET_RANGE:
-        build_train_words_dataset_img(imgs_dir=img_dir, img_num=img_num)
+        build_train_words_dataset_img(imgs_dir=imgs_dir, img_num=img_num)
 
 
 # -------------------------------------------------------------------------------------------------------------
@@ -271,36 +274,58 @@ def build_test_dataset_img(img_dir: str, img_num: int):
     test_img_file_path = join(test_img_dir_path, '{}.jpg'.format(img_num))  # TODO: save in nested folder `img_name`
     pad_test_img.save(test_img_file_path)
 
+
 # -------------------------------------------------------------------------------------------------------------
 def extract_features(directory, sample_count, datagen, batch_size, input_shape, target_size):
-
     conv_base = VGG16(weights='imagenet',
                       include_top=False,
                       input_shape=input_shape)
 
     conv_base.summary()
 
-    features = np.zeros(shape=(sample_count, 24, 6, 512))
-    labels = np.zeros(shape=(sample_count))
+    conv_base_output_shape = conv_base.layers[-1].output.shape[1:]  # get shape of last layer
+    features_shape = (sample_count, *conv_base_output_shape)
+
+    features = np.zeros(shape=features_shape)
+    labels = np.zeros(shape=(sample_count,))
     generator = datagen.flow_from_directory(
         directory,
         target_size=target_size,
         batch_size=batch_size,
         class_mode='binary')
-    i=0
-    for inputs_batch, labels_batch in generator:
+    for i, (inputs_batch, labels_batch) in enumerate(generator):
         features_batch = conv_base.predict(inputs_batch)
-        features[i * batch_size : (i + 1) * batch_size] = features_batch
-        labels[i * batch_size : (i + 1) * batch_size] = labels_batch
-        i += 1
-        print(i*batch_size, "    ",  sample_count)
+        features[i * batch_size: (i + 1) * batch_size] = features_batch
+        labels[i * batch_size: (i + 1) * batch_size] = labels_batch
+        print(i * batch_size, "====>", sample_count)
         if i * batch_size >= sample_count:
             break
     return features, labels
 
+
 # -------------------------------------------------------------------------------------------------------------
-def use_clf(img_dir: str):
-    train_dir = get_train_dir(img_dir)
+def save_train_features_labels(train_features, train_labels):
+    train_dir = get_train_dir(imgs_dir)
+    train_features_file_path = join(train_dir, TRAIN_FEATURES_FILE_NAME + '.npy')
+    train_labels_file_path = join(train_dir, TRAIN_LABELS_FILE_NAME + '.npy')
+    np.save(train_features_file_path, train_features)
+    np.save(train_labels_file_path, train_labels)
+
+
+# -------------------------------------------------------------------------------------------------------------
+def load_train_features_labels(imgs_dir: str):
+    train_dir = get_train_dir(imgs_dir)
+    train_features_file_path = join(train_dir, TRAIN_FEATURES_FILE_NAME + '.npy')
+    train_labels_file_path = join(train_dir, TRAIN_LABELS_FILE_NAME + '.npy')
+    train_features = np.load(train_features_file_path)
+    train_labels = np.load(train_labels_file_path)
+    return train_features, train_labels
+
+
+# -------------------------------------------------------------------------------------------------------------
+def use_clf(imgs_dir: str):
+    is_extract_features = False
+    train_dir = get_train_dir(imgs_dir)
 
     target_size = (MAX_WORD_W, MAX_WORD_H)
     print('target_size = ', target_size)
@@ -309,7 +334,7 @@ def use_clf(img_dir: str):
     shift_side = 0.1
     train_gen = ImageDataGenerator(rotation_range=2, width_shift_range=shift_side, height_shift_range=shift_side)
     train_dataset = train_gen.flow_from_directory(train_dir, target_size=target_size,
-                                                  class_mode='categorical', batch_size=2)
+                                                  class_mode='binary', batch_size=2)
     # TODO: add validation_gen, test_gen
 
     num_of_cls = len(train_dataset.class_indices)
@@ -320,7 +345,7 @@ def use_clf(img_dir: str):
     n_validation_samples = 133
     n_test_samples = num_of_writers - n_validation_samples - n_train_samples
     '''
-    epochs = 20
+    epochs = 8
     batch_size = 5
     learning_rate = 0.0005
     steps_per_epoch = sample_count // num_of_cls
@@ -330,44 +355,34 @@ def use_clf(img_dir: str):
 
     model = models.Sequential()
 
-    
-    
-
-    #train_features, train_labels = extract_features(train_dir, sample_count, train_gen, batch_size, input_shape, target_size)
-
-    #np.save('train_features', train_features)
-    #np.save('train_labels', train_labels)
-
-    #exit()
-
-    train_features = np.load('train_features.npy')
-    train_labels = np.load('train_labels.npy')
+    if is_extract_features:
+        train_features, train_labels = extract_features(train_dir, sample_count, train_gen,
+                                                        batch_size, input_shape, target_size)
+        save_train_features_labels(train_features, train_labels)
+    else:
+        train_features, train_labels = load_train_features_labels(imgs_dir)
 
     train_features = np.reshape(train_features, (sample_count, 24 * 6 * 512))
 
     model.add(layers.Dense(64, activation='relu', input_dim=24 * 6 * 512))
-    model.add(layers.Dense(64, activation='relu'))
-    model.add(layers.Dense(64, activation='relu'))
-    model.add(layers.Dense(64, activation='relu'))
-    #model.add(layers.Dropout(0.5))
+    #model.add(layers.Dense(64, activation='relu'))
+    #model.add(layers.Dense(64, activation='relu'))
+    #model.add(layers.Dense(64, activation='relu'))
+    # model.add(layers.Dropout(0.5))
     model.add(Flatten())
     model.add(layers.Dense(1, activation='sigmoid'))
 
     model.summary()
-    
-    model.compile(loss='categorical_crossentropy',
+
+    model.compile(loss='binary_crossentropy',
                   optimizer=optimizers.RMSprop(lr=learning_rate),
                   metrics=['acc'])
 
-    #model.build(input_shape)
+    # model.build(input_shape)
 
-    
-
-    
-    
     history = model.fit(train_features, train_labels, epochs=epochs, batch_size=batch_size)
 
-    # TODO: use `validation_data` & `validation_steps`
+    # TODO: in fit, use `validation_data` & `validation_steps`
 
     '''
 
@@ -392,8 +407,6 @@ def use_clf(img_dir: str):
     model.fit(train_dataset, epochs=epochs, batch_size=batch_size,
               steps_per_epoch=steps_per_epoch)  # don't need use deprecated function `fit_generator`
     '''
-
-    
 
 
 # -------------------------------------------------------------------------------------------------------------
