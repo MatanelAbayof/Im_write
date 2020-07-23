@@ -280,10 +280,8 @@ def build_test_dataset_img(img_dir: str, img_num: int):
 
 
 # -------------------------------------------------------------------------------------------------------------
-def extract_features(directory, sample_count, datagen, batch_size, input_shape, target_size):
-    conv_base = VGG16(weights='imagenet',
-                      include_top=False,
-                      input_shape=input_shape)
+def extract_features(directory, sample_count, dataset, batch_size, input_shape, target_size):
+    conv_base = VGG16(weights='imagenet', include_top=False, input_shape=input_shape)
 
     conv_base.summary()
 
@@ -292,15 +290,12 @@ def extract_features(directory, sample_count, datagen, batch_size, input_shape, 
 
     features = np.zeros(shape=features_shape)
     labels = np.zeros(shape=sample_count)
-    generator = datagen.flow_from_directory(
-        directory,
-        target_size=target_size,
-        batch_size=batch_size,
-        class_mode='binary')
-    for i, (inputs_batch, labels_batch) in enumerate(generator):
+    i = 0
+    for inputs_batch, labels_batch in dataset:
         features_batch = conv_base.predict(inputs_batch)
-        features[i * batch_size: (i + 1) * batch_size] = features_batch
-        labels[i * batch_size: (i + 1) * batch_size] = labels_batch
+        features[i * batch_size : (i + 1) * batch_size] = features_batch
+        labels[i * batch_size : (i + 1) * batch_size] = labels_batch
+        i += 1
         print(i * batch_size, "====>", sample_count)
         if i * batch_size >= sample_count:
             break
@@ -334,7 +329,7 @@ def for_each_img_dir(dataset_dir: str):
         yield img_dir_path, imgs_files_paths
 
 # -------------------------------------------------------------------------------------------------------------
-def split_train_validation_datasets(imgs_dir: str, validation_size: float = 0.5):
+def split_train_validation_datasets(imgs_dir: str, validation_size: float = 0.3):
     train_dir = get_train_dir(imgs_dir)
     validation_dir = get_validation_dir(imgs_dir)
     shutil.rmtree(validation_dir, ignore_errors=True)
@@ -342,7 +337,7 @@ def split_train_validation_datasets(imgs_dir: str, validation_size: float = 0.5)
 
     for img_dir_path, imgs_files_path in for_each_img_dir(train_dir):
         n_validations = math.floor(len(imgs_files_path) * validation_size)
-        n_trains = len(imgs_files_path) - n_validations
+        #n_trains = len(imgs_files_path) - n_validations
 
         img_dir_name = ntpath.basename(img_dir_path)
         new_img_dir_path = join(validation_dir, img_dir_name)
@@ -351,15 +346,16 @@ def split_train_validation_datasets(imgs_dir: str, validation_size: float = 0.5)
 
         print("building directory '{}'...".format(new_img_dir_path))
 
-        for old_img_file_path in imgs_files_path[:n_validations]:
+        validation_imgs_files_path = np.random.choice(imgs_files_path, n_validations, replace=False)
+        for old_img_file_path in validation_imgs_files_path:
             img_file_name = ntpath.basename(old_img_file_path)
             new_img_file_path = join(new_img_dir_path, img_file_name)
-            #print("move image from '{0}' to '{1}'".format(old_img_file_path, new_img_file_path))
+            print("move image from '{0}' to '{1}'".format(old_img_file_path, new_img_file_path))
             os.rename(old_img_file_path, new_img_file_path)
 
 # -------------------------------------------------------------------------------------------------------------
 def use_clf(imgs_dir: str):
-    is_extract_features = True
+    is_extract_features = False
     train_dir = get_train_dir(imgs_dir)
     validation_dir = get_validation_dir(imgs_dir)
 
@@ -384,7 +380,7 @@ def use_clf(imgs_dir: str):
     n_validation_samples = 133
     n_test_samples = num_of_writers - n_validation_samples - n_train_samples
     '''
-    epochs = 8
+    epochs = 10
     batch_size = 2
     learning_rate = 0.0005
     #steps_per_epoch = sample_count // num_of_cls
@@ -395,9 +391,9 @@ def use_clf(imgs_dir: str):
     model = models.Sequential()
 
     if is_extract_features:
-        train_features, train_labels = extract_features(train_dir, train_sample_count, train_gen,
+        train_features, train_labels = extract_features(train_dir, train_sample_count, train_dataset,
                                                         batch_size, input_shape, target_size)
-        validation_features, validation_labels = extract_features(validation_dir, validation_sample_count, validation_gen,
+        validation_features, validation_labels = extract_features(validation_dir, validation_sample_count, validation_dataset,
                                                         batch_size, input_shape, target_size)
         save_features_labels(train_dir, train_features, train_labels)
         save_features_labels(validation_dir, validation_features, validation_labels)
@@ -405,15 +401,12 @@ def use_clf(imgs_dir: str):
         train_features, train_labels = load_features_labels(train_dir)
         validation_features, validation_labels = load_features_labels(validation_dir)
 
-    train_features = np.reshape(train_features, (sample_count, 24 * 6 * 512))
-    validation_features = np.reshape(validation_features, (sample_count, 24 * 6 * 512))
+    train_features = np.reshape(train_features, (train_sample_count, 24 * 6 * 512))
+    validation_features = np.reshape(validation_features, (validation_sample_count, 24 * 6 * 512))
 
-    model.add(layers.Dense(64, activation='relu', input_dim=24 * 6 * 512))
-    #model.add(layers.Dense(64, activation='relu'))
-    #model.add(layers.Dense(64, activation='relu'))
-    #model.add(layers.Dense(64, activation='relu'))
-    # model.add(layers.Dropout(0.5))
-    model.add(Flatten())
+    model.add(layers.Dense(16, activation='relu', input_dim=24 * 6 * 512))  
+    model.add(layers.Flatten())
+    model.add(layers.Dense(16, activation='relu'))
     model.add(layers.Dense(1, activation='sigmoid'))
 
     model.summary()
@@ -426,7 +419,28 @@ def use_clf(imgs_dir: str):
 
     history = model.fit(train_features, train_labels, epochs=epochs, batch_size=batch_size, validation_data=(validation_features, validation_labels))
 
+
     # TODO: in fit, use  `validation_steps`
+
+
+    epochs = history.epoch
+    hyper_params = history.history
+
+    acc = hyper_params['acc']
+    val_acc = hyper_params['val_acc']
+    loss = hyper_params['loss']
+    val_loss = hyper_params['val_loss']
+
+    plt.plot(epochs, acc, 'bo', label='Training acc')
+    plt.plot(epochs, val_acc, 'b', label='Validation acc')
+    plt.title('Training and validation accuracy')
+    plt.legend()
+    plt.figure()
+    plt.plot(epochs, loss, 'bo', label='Training loss')
+    plt.plot(epochs, val_loss, 'b', label='Validation loss')
+    plt.title('Training and validation loss')
+    plt.legend()
+    plt.show()
 
     '''
 
