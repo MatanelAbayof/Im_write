@@ -21,6 +21,7 @@ import shutil
 import time
 from keras.optimizers import SGD
 from keras.applications import VGG16, ResNet50
+import ntpath
 
 pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 
@@ -146,13 +147,16 @@ def parse_y_positions(line_info):
 
 
 # -------------------------------------------------------------------------------------------------------------
-def get_train_dir(img_dir: str):
-    return join(img_dir, 'train')
-
+def get_train_dir(imgs_dir: str):
+    return join(imgs_dir, 'train')
 
 # -------------------------------------------------------------------------------------------------------------
-def get_test_dir(img_dir: str):
-    return join(img_dir, 'test')
+def get_validation_dir(imgs_dir: str):
+    return join(imgs_dir, 'validation')
+
+# -------------------------------------------------------------------------------------------------------------
+def get_test_dir(imgs_dir: str):
+    return join(imgs_dir, 'test')
 
 
 # -------------------------------------------------------------------------------------------------------------
@@ -287,7 +291,7 @@ def extract_features(directory, sample_count, datagen, batch_size, input_shape, 
     features_shape = (sample_count, *conv_base_output_shape)
 
     features = np.zeros(shape=features_shape)
-    labels = np.zeros(shape=(sample_count,))
+    labels = np.zeros(shape=sample_count)
     generator = datagen.flow_from_directory(
         directory,
         target_size=target_size,
@@ -304,28 +308,60 @@ def extract_features(directory, sample_count, datagen, batch_size, input_shape, 
 
 
 # -------------------------------------------------------------------------------------------------------------
-def save_train_features_labels(train_features, train_labels):
-    train_dir = get_train_dir(imgs_dir)
-    train_features_file_path = join(train_dir, TRAIN_FEATURES_FILE_NAME + '.npy')
-    train_labels_file_path = join(train_dir, TRAIN_LABELS_FILE_NAME + '.npy')
-    np.save(train_features_file_path, train_features)
-    np.save(train_labels_file_path, train_labels)
+def save_features_labels(dataset_dir: str, features, labels):
+    features_file_path = join(dataset_dir, 'features.npy')
+    labels_file_path = join(dataset_dir, 'labels.npy')
+    np.save(features_file_path, features)
+    np.save(labels_file_path, labels)
 
 
 # -------------------------------------------------------------------------------------------------------------
-def load_train_features_labels(imgs_dir: str):
-    train_dir = get_train_dir(imgs_dir)
-    train_features_file_path = join(train_dir, TRAIN_FEATURES_FILE_NAME + '.npy')
-    train_labels_file_path = join(train_dir, TRAIN_LABELS_FILE_NAME + '.npy')
-    train_features = np.load(train_features_file_path)
-    train_labels = np.load(train_labels_file_path)
-    return train_features, train_labels
+def load_features_labels(dataset_dir: str):
+    features_file_path = join(dataset_dir, 'features.npy')
+    labels_file_path = join(dataset_dir, 'labels.npy')
+    features = np.load(features_file_path)
+    labels = np.load(labels_file_path)
+    return features, labels
 
+
+# -------------------------------------------------------------------------------------------------------------
+def for_each_img_dir(dataset_dir: str):
+    imgs_dirs_names = [f for f in listdir(dataset_dir) if isdir(join(dataset_dir, f))]
+    for img_dir_name in imgs_dirs_names:
+        img_dir_path = join(dataset_dir, img_dir_name)
+        imgs_names = [f for f in listdir(img_dir_path) if isfile(join(img_dir_path, f))]
+        imgs_files_paths = [join(img_dir_path, img_name) for img_name in imgs_names]
+        yield img_dir_path, imgs_files_paths
+
+# -------------------------------------------------------------------------------------------------------------
+def split_train_validation_datasets(imgs_dir: str, validation_size: float = 0.5):
+    train_dir = get_train_dir(imgs_dir)
+    validation_dir = get_validation_dir(imgs_dir)
+    shutil.rmtree(validation_dir, ignore_errors=True)
+    Path(validation_dir).mkdir(parents=True, exist_ok=True)   
+
+    for img_dir_path, imgs_files_path in for_each_img_dir(train_dir):
+        n_validations = math.floor(len(imgs_files_path) * validation_size)
+        n_trains = len(imgs_files_path) - n_validations
+
+        img_dir_name = ntpath.basename(img_dir_path)
+        new_img_dir_path = join(validation_dir, img_dir_name)
+        shutil.rmtree(new_img_dir_path, ignore_errors=True)
+        Path(new_img_dir_path).mkdir(parents=True, exist_ok=True)
+
+        print("building directory '{}'...".format(new_img_dir_path))
+
+        for old_img_file_path in imgs_files_path[:n_validations]:
+            img_file_name = ntpath.basename(old_img_file_path)
+            new_img_file_path = join(new_img_dir_path, img_file_name)
+            #print("move image from '{0}' to '{1}'".format(old_img_file_path, new_img_file_path))
+            os.rename(old_img_file_path, new_img_file_path)
 
 # -------------------------------------------------------------------------------------------------------------
 def use_clf(imgs_dir: str):
-    is_extract_features = False
+    is_extract_features = True
     train_dir = get_train_dir(imgs_dir)
+    validation_dir = get_validation_dir(imgs_dir)
 
     target_size = (MAX_WORD_W, MAX_WORD_H)
     print('target_size = ', target_size)
@@ -335,10 +371,13 @@ def use_clf(imgs_dir: str):
     train_gen = ImageDataGenerator(rotation_range=2, width_shift_range=shift_side, height_shift_range=shift_side)
     train_dataset = train_gen.flow_from_directory(train_dir, target_size=target_size,
                                                   class_mode='binary', batch_size=2)
-    # TODO: add validation_gen, test_gen
+    validation_gen = ImageDataGenerator()
+    validation_dataset = validation_gen.flow_from_directory(validation_dir, target_size=target_size,
+                                                  class_mode='binary', batch_size=2)
 
     num_of_cls = len(train_dataset.class_indices)
-    sample_count = len(train_dataset.filenames)
+    train_sample_count = len(train_dataset.filenames)
+    validation_sample_count = len(validation_dataset.filenames)
 
     '''
     n_train_samples = num_of_writers // 2
@@ -346,9 +385,9 @@ def use_clf(imgs_dir: str):
     n_test_samples = num_of_writers - n_validation_samples - n_train_samples
     '''
     epochs = 8
-    batch_size = 5
+    batch_size = 2
     learning_rate = 0.0005
-    steps_per_epoch = sample_count // num_of_cls
+    #steps_per_epoch = sample_count // num_of_cls
 
     input_shape = (*target_size, 3)
     print('input_shape = ', input_shape)
@@ -356,13 +395,18 @@ def use_clf(imgs_dir: str):
     model = models.Sequential()
 
     if is_extract_features:
-        train_features, train_labels = extract_features(train_dir, sample_count, train_gen,
+        train_features, train_labels = extract_features(train_dir, train_sample_count, train_gen,
                                                         batch_size, input_shape, target_size)
-        save_train_features_labels(train_features, train_labels)
+        validation_features, validation_labels = extract_features(validation_dir, validation_sample_count, validation_gen,
+                                                        batch_size, input_shape, target_size)
+        save_features_labels(train_dir, train_features, train_labels)
+        save_features_labels(validation_dir, validation_features, validation_labels)
     else:
-        train_features, train_labels = load_train_features_labels(imgs_dir)
+        train_features, train_labels = load_features_labels(train_dir)
+        validation_features, validation_labels = load_features_labels(validation_dir)
 
     train_features = np.reshape(train_features, (sample_count, 24 * 6 * 512))
+    validation_features = np.reshape(validation_features, (sample_count, 24 * 6 * 512))
 
     model.add(layers.Dense(64, activation='relu', input_dim=24 * 6 * 512))
     #model.add(layers.Dense(64, activation='relu'))
@@ -380,9 +424,9 @@ def use_clf(imgs_dir: str):
 
     # model.build(input_shape)
 
-    history = model.fit(train_features, train_labels, epochs=epochs, batch_size=batch_size)
+    history = model.fit(train_features, train_labels, epochs=epochs, batch_size=batch_size, validation_data=(validation_features, validation_labels))
 
-    # TODO: in fit, use `validation_data` & `validation_steps`
+    # TODO: in fit, use  `validation_steps`
 
     '''
 
@@ -428,6 +472,7 @@ is_build_test_dataset = False
 is_build_all_train_words_dataset = False
 is_find_max_word_size = False
 is_pad_imgs_words = False
+is_split_train_validation_datasets = False
 is_use_clf = True
 
 imgs_dir = LINES_REMOVED_BW_IMG_DIR
@@ -477,6 +522,11 @@ if is_pad_imgs_words:
     print('padding images words...')
     pad_imgs_words(imgs_dir)
     print('finish pad images words successfully')
+
+if is_split_train_validation_datasets:
+    print('splitting images to train and validations directories...')
+    split_train_validation_datasets(imgs_dir)
+    print('finish split images successfully')
 
 if is_use_clf:
     print('using classifier...')
