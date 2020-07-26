@@ -399,6 +399,26 @@ def use_clf(imgs_dir: str):
     input_shape = (*target_size, 3)
     print('input_shape = ', input_shape)
 
+
+    vgg_model = VGG16(weights='imagenet', include_top=False, input_shape=input_shape)
+    vgg_model.trainable = False
+    model = Sequential()
+    model.add(vgg_model)
+    model.add(layers.Flatten())
+    model.add(layers.Dense(256, activation='relu'))
+    model.add(layers.Dense(1, activation='sigmoid'))
+
+    model.summary()
+
+    model.compile(loss='binary_crossentropy',
+                  optimizer=optimizers.RMSprop(lr=learning_rate),
+                  metrics=['acc'])
+
+    history = model.fit(train_dataset, steps_per_epoch=100, epochs=epochs,
+                                  validation_data=validation_dataset,
+                                  validation_steps=50)
+
+    '''
     model = models.Sequential()
 
     if is_extract_features:
@@ -419,6 +439,7 @@ def use_clf(imgs_dir: str):
     model.add(layers.Flatten())
     model.add(layers.Dense(16, activation='relu'))
     model.add(layers.Dense(1, activation='sigmoid'))
+    
 
     model.summary()
 
@@ -429,7 +450,7 @@ def use_clf(imgs_dir: str):
     # model.build(input_shape)
 
     history = model.fit(train_features, train_labels, epochs=epochs, batch_size=batch_size, validation_data=(validation_features, validation_labels))
-
+    '''
 
     # TODO: in fit, use  `validation_steps`
 
@@ -465,7 +486,7 @@ def pad_imgs_words(imgs_dir: str, max_word_size = MAX_WORD_SIZE):
 
 # endregion
 
-is_full_build_dataset = True
+is_full_build_dataset = False
 is_fix_img_names = False
 is_find_max_train_line_h = False
 is_find_max_test_line_h = False
@@ -476,7 +497,7 @@ is_build_all_test_words_dataset = False
 is_find_max_word_size = False
 is_pad_imgs_words = False
 is_split_train_validation_datasets = False
-is_use_clf = False
+is_use_clf = True
 
 imgs_dir = LINES_REMOVED_BW_IMG_DIR
 train_dir = get_train_dir(imgs_dir)
