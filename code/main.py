@@ -1,27 +1,22 @@
 import math
-import os, sys
-import pytesseract
-from pytesseract import Output
-import cv2
+import ntpath
+import os
+import shutil
+import time
 from os import listdir
 from os.path import isfile, join, isdir
 from pathlib import Path
 
-import matplotlib.image as mpimg
 import matplotlib.pyplot as plt
 import numpy as np
+import pytesseract
 import scipy.io
-from keras.layers import (Activation, Conv2D, Dense, Dropout, Flatten,
-                          MaxPooling2D)
+from PIL import Image, ImageOps
+from keras.applications import VGG16, ResNet50
 from keras.models import Sequential
 from keras.preprocessing.image import ImageDataGenerator
-from PIL import Image, ImageOps
-from tensorflow.keras import layers, models, optimizers
-import shutil
-import time
-from keras.optimizers import SGD
-from keras.applications import VGG16, ResNet50
-import ntpath
+from pytesseract import Output
+from tensorflow.keras import layers, optimizers
 
 pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 
@@ -51,7 +46,7 @@ MAX_TRAIN_LINE_H = 205
 MAX_TEST_LINE_H = 220
 MAX_LINE_H = max(MAX_TRAIN_LINE_H, MAX_TEST_LINE_H)
 MAX_WORD_W = 776
-MAX_WORD_H = 194
+MAX_WORD_H = 177
 MAX_WORD_SIZE = (MAX_WORD_W, MAX_WORD_H)
 MIN_WORD_W = 40
 MIN_WORD_H = 40
@@ -83,28 +78,33 @@ def full_build_dataset(imgs_dir: str):
     build_all_words_dataset(train_dir)
     print('train images words dataset has built successfully')
     print('building words of images at test dataset...')
-    '''
-    build_all_words_dataset(test_dir) #TODO: fix indexof here
-    print('test images words dataset has built successfully')
+    #build_all_words_dataset(test_dir) #TODO: fix indexof here
+    #print('test images words dataset has built successfully')
     print('find maximum word size...')
     max_w, max_h = find_max_word_size(imgs_dir)
     max_word_size = (max_w, max_h)
     print('maximum word size is', max_word_size)
-    pad_imgs_words(imgs_dir=imgs_dir, max_word_size=max_word_size)
-    #TODO: use move words to dataset folder and split to validation folder
+    pad_imgs_words(dataset_dir=train_dir, max_word_size=max_word_size)
+    print('train images words dataset has padded successfully')
+    '''
+    # TODO: move words to dataset folder (remove lines images first) - do this for train and test datasets
+    # TODO: split to validation folder
 
-    
+
 # -------------------------------------------------------------------------------------------------------------
 def get_train_dir(imgs_dir: str):
     return join(imgs_dir, 'train')
+
 
 # -------------------------------------------------------------------------------------------------------------
 def get_validation_dir(imgs_dir: str):
     return join(imgs_dir, 'validation')
 
+
 # -------------------------------------------------------------------------------------------------------------
 def get_test_dir(imgs_dir: str):
     return join(imgs_dir, 'test')
+
 
 # -------------------------------------------------------------------------------------------------------------
 def is_white_img(img: Image):  # TODO: improve run time
@@ -116,6 +116,7 @@ def is_white_img(img: Image):  # TODO: improve run time
             if pixel != (255, 255, 255):
                 not_white_pixels.append(pixel)
     return len(not_white_pixels) < 2 * img_w
+
 
 # -------------------------------------------------------------------------------------------------------------
 def find_max_train_line_h():
@@ -130,6 +131,7 @@ def find_max_train_line_h():
     print('lines height = ', lines_h)
     return max(lines_h)
 
+
 # -------------------------------------------------------------------------------------------------------------
 def find_max_test_line_h():
     lines_h = []
@@ -143,6 +145,7 @@ def find_max_test_line_h():
     print('lines height = ', lines_h)
     return max(lines_h)
 
+
 # -------------------------------------------------------------------------------------------------------------
 def fix_imgs_names():
     for dir_idx, directory in enumerate(IMG_DIRECTORIES):
@@ -155,16 +158,19 @@ def fix_imgs_names():
             new_file = join(directory, file_name)
             os.rename(old_file, new_file)
 
+
 # -------------------------------------------------------------------------------------------------------------
 def load_img(dir: str = ORIGINAL_IMG_DIR, img_num: int = 1):
     img_path = join(dir, '{}.jpg'.format(img_num))
     return Image.open(img_path)
+
 
 # -------------------------------------------------------------------------------------------------------------
 def load_img_lines_info(img_num: int):
     file_name = '{}.mat'.format(img_num)
     file_path = os.path.join(IMG_POSITIONS_DIR, file_name)
     return scipy.io.loadmat(file_path)
+
 
 # -------------------------------------------------------------------------------------------------------------
 def parse_y_positions(line_info):
@@ -173,8 +179,9 @@ def parse_y_positions(line_info):
     y_positions = peaks_indices * scale_factor
     return y_positions
 
+
 # -------------------------------------------------------------------------------------------------------------
-def build_all_lines_train_dataset(img_dir: str, max_line_h = MAX_LINE_H):
+def build_all_lines_train_dataset(img_dir: str, max_line_h=MAX_LINE_H):
     train_dir = get_train_dir(img_dir)
     # removing directory
     shutil.rmtree(train_dir, ignore_errors=True)
@@ -184,8 +191,9 @@ def build_all_lines_train_dataset(img_dir: str, max_line_h = MAX_LINE_H):
     for img_num in TRAIN_DATASET_RANGE:
         build_lines_train_dataset_img(imgs_dir=img_dir, img_num=img_num, max_line_h=max_line_h)
 
+
 # -------------------------------------------------------------------------------------------------------------
-def build_lines_train_dataset_img(imgs_dir: str, img_num: int, max_line_h = MAX_LINE_H):
+def build_lines_train_dataset_img(imgs_dir: str, img_num: int, max_line_h=MAX_LINE_H):
     print('building lines of train dataset image num {}'.format(img_num))
 
     train_dir = get_train_dir(imgs_dir)
@@ -208,8 +216,9 @@ def build_lines_train_dataset_img(imgs_dir: str, img_num: int, max_line_h = MAX_
             if not is_white_img(new_img):
                 new_img.save(sub_img_file_path)
 
+
 # -------------------------------------------------------------------------------------------------------------
-def build_all_lines_test_dataset(imgs_dir: str, max_line_h = MAX_LINE_H):
+def build_all_lines_test_dataset(imgs_dir: str, max_line_h=MAX_LINE_H):
     test_dir = get_test_dir(imgs_dir)
     # removing directory
     shutil.rmtree(test_dir, ignore_errors=True)
@@ -219,8 +228,9 @@ def build_all_lines_test_dataset(imgs_dir: str, max_line_h = MAX_LINE_H):
     for img_num in TRAIN_DATASET_RANGE:
         build_lines_test_dataset_img(img_dir=imgs_dir, img_num=img_num, max_line_h=max_line_h)
 
+
 # -------------------------------------------------------------------------------------------------------------
-def build_lines_test_dataset_img(img_dir: str, img_num: int, max_line_h = MAX_LINE_H):
+def build_lines_test_dataset_img(img_dir: str, img_num: int, max_line_h=MAX_LINE_H):
     print('building test dataset image num {}'.format(img_num))
 
     test_dir = get_test_dir(img_dir)
@@ -236,10 +246,12 @@ def build_lines_test_dataset_img(img_dir: str, img_num: int, max_line_h = MAX_LI
     test_img_file_path = join(test_img_dir_path, '{}.jpg'.format(img_num))  # TODO: save in nested folder `img_name`
     pad_test_img.save(test_img_file_path)
 
+
 # -------------------------------------------------------------------------------------------------------------
 def build_all_words_dataset(dataset_dir: str):
     for img_num in TRAIN_DATASET_RANGE:
-       build_words_dataset_img(dataset_dir=dataset_dir, img_num=img_num)
+        build_words_dataset_img(dataset_dir=dataset_dir, img_num=img_num)
+
 
 # -------------------------------------------------------------------------------------------------------------
 def build_words_dataset_img(dataset_dir: str, img_num: int):
@@ -271,6 +283,7 @@ def build_words_dataset_img(dataset_dir: str, img_num: int):
                     img_word_path = join(img_words_path, '{0}_{1}_{2}.jpg'.format(img_num, row_num, i))
                     img_word.save(img_word_path)
 
+
 # -------------------------------------------------------------------------------------------------------------
 def for_each_img_word(dadaset_dir: str):
     imgs_dirs_names = [d for d in listdir(dadaset_dir) if isdir(join(dadaset_dir, d))]
@@ -286,6 +299,7 @@ def for_each_img_word(dadaset_dir: str):
             img_word = Image.open(img_word_file_path)
             yield img_word_file_path, img_word
 
+
 # -------------------------------------------------------------------------------------------------------------
 def find_max_word_size(imgs_dir: str):
     max_w, max_h = (0, 0)
@@ -295,6 +309,7 @@ def find_max_word_size(imgs_dir: str):
         max_w = max(img_w, max_w)
         max_h = max(img_h, max_h)
     return max_w, max_h
+
 
 # -------------------------------------------------------------------------------------------------------------
 def extract_features(directory, sample_count, dataset, batch_size, input_shape, target_size):
@@ -310,13 +325,14 @@ def extract_features(directory, sample_count, dataset, batch_size, input_shape, 
     i = 0
     for inputs_batch, labels_batch in dataset:
         features_batch = conv_base.predict(inputs_batch)
-        features[i * batch_size : (i + 1) * batch_size] = features_batch
-        labels[i * batch_size : (i + 1) * batch_size] = labels_batch
+        features[i * batch_size: (i + 1) * batch_size] = features_batch
+        labels[i * batch_size: (i + 1) * batch_size] = labels_batch
         i += 1
         print(i * batch_size, "====>", sample_count)
         if i * batch_size >= sample_count:
             break
     return features, labels
+
 
 # -------------------------------------------------------------------------------------------------------------
 def save_features_labels(dataset_dir: str, features, labels):
@@ -325,6 +341,7 @@ def save_features_labels(dataset_dir: str, features, labels):
     np.save(features_file_path, features)
     np.save(labels_file_path, labels)
 
+
 # -------------------------------------------------------------------------------------------------------------
 def load_features_labels(dataset_dir: str):
     features_file_path = join(dataset_dir, 'features.npy')
@@ -332,6 +349,7 @@ def load_features_labels(dataset_dir: str):
     features = np.load(features_file_path)
     labels = np.load(labels_file_path)
     return features, labels
+
 
 # -------------------------------------------------------------------------------------------------------------
 def for_each_img_dir(dataset_dir: str):
@@ -342,16 +360,17 @@ def for_each_img_dir(dataset_dir: str):
         imgs_files_paths = [join(img_dir_path, img_name) for img_name in imgs_names]
         yield img_dir_path, imgs_files_paths
 
+
 # -------------------------------------------------------------------------------------------------------------
 def split_train_validation_datasets(imgs_dir: str, validation_size: float = 0.3):
     train_dir = get_train_dir(imgs_dir)
     validation_dir = get_validation_dir(imgs_dir)
     shutil.rmtree(validation_dir, ignore_errors=True)
-    Path(validation_dir).mkdir(parents=True, exist_ok=True)   
+    Path(validation_dir).mkdir(parents=True, exist_ok=True)
 
     for img_dir_path, imgs_files_path in for_each_img_dir(train_dir):
         n_validations = math.floor(len(imgs_files_path) * validation_size)
-        #n_trains = len(imgs_files_path) - n_validations
+        # n_trains = len(imgs_files_path) - n_validations
 
         img_dir_name = ntpath.basename(img_dir_path)
         new_img_dir_path = join(validation_dir, img_dir_name)
@@ -366,6 +385,7 @@ def split_train_validation_datasets(imgs_dir: str, validation_size: float = 0.3)
             new_img_file_path = join(new_img_dir_path, img_file_name)
             print("move image from '{0}' to '{1}'".format(old_img_file_path, new_img_file_path))
             os.rename(old_img_file_path, new_img_file_path)
+
 
 # -------------------------------------------------------------------------------------------------------------
 def use_clf(imgs_dir: str):
@@ -385,27 +405,26 @@ def use_clf(imgs_dir: str):
                                                   class_mode='binary', batch_size=2)
     validation_gen = ImageDataGenerator()
     validation_dataset = validation_gen.flow_from_directory(validation_dir, target_size=target_size,
-                                                  class_mode='binary', batch_size=2)
+                                                            class_mode='binary', batch_size=2)
 
-    #num_of_cls = len(train_dataset.class_indices)
+    num_of_cls = len(train_dataset.class_indices)
     train_sample_count = len(train_dataset.filenames)
     validation_sample_count = len(validation_dataset.filenames)
 
-    epochs = 10
-    batch_size = 2
-    learning_rate = 0.0005
-    #steps_per_epoch = sample_count // num_of_cls
+    epochs = 5
+    batch_size = 8
+    learning_rate = 0.00001
+    steps_per_epoch = train_sample_count // num_of_cls
 
     input_shape = (*target_size, 3)
     print('input_shape = ', input_shape)
 
-
-    vgg_model = VGG16(weights='imagenet', include_top=False, input_shape=input_shape)
-    vgg_model.trainable = False
+    base_model = ResNet50(weights='imagenet', include_top=False, input_shape=input_shape)
+    base_model.trainable = False
     model = Sequential()
-    model.add(vgg_model)
+    model.add(base_model)
     model.add(layers.Flatten())
-    model.add(layers.Dense(256, activation='relu'))
+    model.add(layers.Dense(4, activation='relu'))
     model.add(layers.Dense(1, activation='sigmoid'))
 
     model.summary()
@@ -414,9 +433,8 @@ def use_clf(imgs_dir: str):
                   optimizer=optimizers.RMSprop(lr=learning_rate),
                   metrics=['acc'])
 
-    history = model.fit(train_dataset, steps_per_epoch=100, epochs=epochs,
-                                  validation_data=validation_dataset,
-                                  validation_steps=50)
+    history = model.fit(train_dataset, steps_per_epoch=steps_per_epoch, epochs=epochs, batch_size=batch_size,
+                        validation_data=validation_dataset)
 
     '''
     model = models.Sequential()
@@ -452,9 +470,6 @@ def use_clf(imgs_dir: str):
     history = model.fit(train_features, train_labels, epochs=epochs, batch_size=batch_size, validation_data=(validation_features, validation_labels))
     '''
 
-    # TODO: in fit, use  `validation_steps`
-
-
     if is_plot_history:
         epochs = history.epoch
         hyper_params = history.history
@@ -475,10 +490,10 @@ def use_clf(imgs_dir: str):
         plt.legend()
         plt.show()
 
+
 # -------------------------------------------------------------------------------------------------------------
-def pad_imgs_words(imgs_dir: str, max_word_size = MAX_WORD_SIZE):
-    train_dir = get_train_dir(imgs_dir)
-    for img_word_file_path, img_word in for_each_img_word(train_dir):
+def pad_imgs_words(dataset_dir: str, max_word_size=MAX_WORD_SIZE):
+    for img_word_file_path, img_word in for_each_img_word(dataset_dir):
         new_img = ImageOps.pad(img_word.convert("RGB"), size=max_word_size, color=(0xFF, 0xFF, 0xFF))
         img_word.close()
         new_img.save(img_word_file_path)
@@ -556,7 +571,7 @@ if is_find_max_word_size:
 
 if is_pad_imgs_words:
     print('padding images words...')
-    pad_imgs_words(imgs_dir)
+    pad_imgs_words(train_dir)
     print('finish pad images words successfully')
 
 if is_split_train_validation_datasets:
