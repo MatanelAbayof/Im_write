@@ -12,7 +12,8 @@ import numpy as np
 import pytesseract
 import scipy.io
 from PIL import Image, ImageOps
-from keras.applications import VGG16, ResNet50
+from keras import regularizers
+from keras.applications import VGG16, ResNet50, VGG19
 from keras.models import Sequential
 from keras.preprocessing.image import ImageDataGenerator
 from pytesseract import Output
@@ -36,7 +37,7 @@ LINES_REMOVED_BW_IMG_DIR = join(IMG_ROOT_DIR, '3_ImagesLinesRemovedBW')
 LINES_REMOVED_IMG_DIR = join(IMG_ROOT_DIR, '4_ImagesLinesRemoved')
 IMG_POSITIONS_DIR = join(IMG_ROOT_DIR, '5_DataDarkLines')
 ALEX_WEIGHTS_PATH = join(IMG_ROOT_DIR, 'alexnet_weights.h5')
-IMG_DIRECTORIES = [ORIGINAL_IMG_DIR, LINES_REMOVED_BW_IMG_DIR,
+IMG_DIRECTORIES = [ORIGINAL_IMG_DIR, LINES_REMOVED_BW_IMG_DIR, LINES_REMOVED_IMG_DIR,
                    IMG_POSITIONS_DIR]  # TODO: do this for each images directories (IMG_POSITIONS_DIR must be the last item)
 
 ORIGINAL_IMG_W = 4964
@@ -57,7 +58,6 @@ MIN_WORD_H = 40
 # region Functions
 # -------------------------------------------------------------------------------------------------------------
 def full_build_dataset(imgs_dir: str):
-    '''
     print('fixing images names...')
     fix_imgs_names()
     print('finding maximum train line height...')
@@ -73,22 +73,40 @@ def full_build_dataset(imgs_dir: str):
     print('images lines at train dataset has built successfully')
     print('building lines at test dataset...')
     build_all_lines_test_dataset(imgs_dir, max_line_h=max_line_h)
-    print('images lines at test dataset has built successfully')   
+    print('images lines at test dataset has built successfully')
     print('building words of images at train dataset...')
     build_all_words_dataset(train_dir)
     print('train images words dataset has built successfully')
     print('building words of images at test dataset...')
-    #build_all_words_dataset(test_dir) #TODO: fix indexof here
-    #print('test images words dataset has built successfully')
+    # build_all_words_dataset(test_dir) #TODO: fix indexof here
+    # print('test images words dataset has built successfully')
     print('find maximum word size...')
-    max_w, max_h = find_max_word_size(imgs_dir)
-    max_word_size = (max_w, max_h)
+    max_word_size = find_max_word_size(imgs_dir)
     print('maximum word size is', max_word_size)
     pad_imgs_words(dataset_dir=train_dir, max_word_size=max_word_size)
     print('train images words dataset has padded successfully')
-    '''
-    # TODO: move words to dataset folder (remove lines images first) - do this for train and test datasets
-    # TODO: split to validation folder
+    move_words_dir(train_dir)
+    # TODO: move words to dataset folder (remove lines images first) - do this for  test dataset
+    split_train_validation_datasets(imgs_dir)
+
+
+def move_words_dir(dataset_dir: str):
+    imgs_dirs_names = [d for d in listdir(dataset_dir) if isdir(join(dataset_dir, d))]
+    for img_dir_name in imgs_dirs_names:
+        img_dir_path = join(dataset_dir, img_dir_name)
+        imgs_lines_names = [f for f in listdir(img_dir_path) if isfile(join(img_dir_path, f))]
+        for img_line_name in imgs_lines_names:
+            img_line_path = join(img_dir_path, img_line_name)
+            # print("removing image line at '{}'...".format(img_line_path))
+            os.remove(img_line_path)
+        img_words_path = join(img_dir_path, 'words')
+        imgs_words_names = [f for f in listdir(img_words_path) if isfile(join(img_words_path, f))]
+        for img_word_name in imgs_words_names:
+            old_img_word_path = join(img_words_path, img_word_name)
+            new_img_word_path = join(img_dir_path, img_word_name)
+            # print("moving image word from '{0}' to '{1}'...".format(old_img_word_path, new_img_word_path))
+            os.rename(old_img_word_path, new_img_word_path)
+        os.rmdir(img_words_path)
 
 
 # -------------------------------------------------------------------------------------------------------------
@@ -312,8 +330,8 @@ def find_max_word_size(imgs_dir: str):
 
 
 # -------------------------------------------------------------------------------------------------------------
-def extract_features(directory, sample_count, dataset, batch_size, input_shape, target_size):
-    conv_base = VGG16(weights='imagenet', include_top=False, input_shape=input_shape)
+def extract_features(sample_count, dataset, batch_size, input_shape):
+    conv_base = VGG19(weights='imagenet', include_top=False, input_shape=input_shape)
 
     conv_base.summary()
 
@@ -398,34 +416,50 @@ def use_clf(imgs_dir: str):
     target_size = (MAX_WORD_W, MAX_WORD_H)
     print('target_size = ', target_size)
 
+    batch_size = 2
+
     # create a data generator
     shift_side = 0.1
     train_gen = ImageDataGenerator(rotation_range=2, width_shift_range=shift_side, height_shift_range=shift_side)
-    train_dataset = train_gen.flow_from_directory(train_dir, target_size=target_size,
-                                                  class_mode='binary', batch_size=2)
+    train_dataset = train_gen.flow_from_directory(train_dir, target_size=target_size, color_mode='grayscale',
+                                                  class_mode='binary', batch_size=batch_size)
     validation_gen = ImageDataGenerator()
-    validation_dataset = validation_gen.flow_from_directory(validation_dir, target_size=target_size,
-                                                            class_mode='binary', batch_size=2)
+    validation_dataset = validation_gen.flow_from_directory(validation_dir, target_size=target_size, color_mode='grayscale',
+                                                            class_mode='binary', batch_size=batch_size)
 
     num_of_cls = len(train_dataset.class_indices)
     train_sample_count = len(train_dataset.filenames)
     validation_sample_count = len(validation_dataset.filenames)
 
-    epochs = 5
-    batch_size = 8
-    learning_rate = 0.00001
+    epochs = 20
+    learning_rate = 0.0001
     steps_per_epoch = train_sample_count // num_of_cls
 
-    input_shape = (*target_size, 3)
+    input_shape = (*target_size, 1)
     print('input_shape = ', input_shape)
 
-    base_model = ResNet50(weights='imagenet', include_top=False, input_shape=input_shape)
+    '''
+    base_model = VGG19(weights='imagenet', include_top=False, input_shape=input_shape)
     base_model.trainable = False
     model = Sequential()
     model.add(base_model)
     model.add(layers.Flatten())
-    model.add(layers.Dense(4, activation='relu'))
+    model.add(layers.Dense(32, activation='relu'))
     model.add(layers.Dense(1, activation='sigmoid'))
+    '''
+
+    '''
+    model = Sequential()
+    model.add(layers.Conv2D(30, (5, 5), input_shape=input_shape, activation='relu'))
+    model.add(layers.MaxPooling2D(8, 8))
+    model.add(layers.Conv2D(30, (3, 3), activation='relu'))
+    model.add(layers.MaxPooling2D(4, 4))
+    model.add(layers.Dropout(0.2))
+    model.add(layers.Flatten())
+    model.add(layers.Dense(128, activation='relu'))
+    model.add(layers.Dense(50, activation='relu'))
+    model.add(layers.Dense(num_of_cls, activation='softmax'))
+    
 
     model.summary()
 
@@ -435,40 +469,45 @@ def use_clf(imgs_dir: str):
 
     history = model.fit(train_dataset, steps_per_epoch=steps_per_epoch, epochs=epochs, batch_size=batch_size,
                         validation_data=validation_dataset)
+                        
 
     '''
-    model = models.Sequential()
+
+    model = Sequential()
 
     if is_extract_features:
-        train_features, train_labels = extract_features(train_dir, train_sample_count, train_dataset,
-                                                        batch_size, input_shape, target_size)
-        validation_features, validation_labels = extract_features(validation_dir, validation_sample_count, validation_dataset,
-                                                        batch_size, input_shape, target_size)
+        train_features, train_labels = extract_features(train_sample_count, train_dataset,
+                                                        batch_size, input_shape)
         save_features_labels(train_dir, train_features, train_labels)
+        validation_features, validation_labels = extract_features(validation_sample_count,
+                                                                  validation_dataset, batch_size, input_shape)
         save_features_labels(validation_dir, validation_features, validation_labels)
     else:
         train_features, train_labels = load_features_labels(train_dir)
         validation_features, validation_labels = load_features_labels(validation_dir)
 
-    train_features = np.reshape(train_features, (train_sample_count, 24 * 6 * 512))
-    validation_features = np.reshape(validation_features, (validation_sample_count, 24 * 6 * 512))
+    base_model_dim = 24 * 5 * 512
 
-    model.add(layers.Dense(16, activation='relu', input_dim=24 * 6 * 512))  
+    train_features = np.reshape(train_features, (train_sample_count, base_model_dim))
+    validation_features = np.reshape(validation_features, (validation_sample_count, base_model_dim))
+
+    kernel_regularizer = regularizers.l2(1e-5)
+    model.add(layers.Dense(32, kernel_regularizer=kernel_regularizer, activation='relu', input_dim=base_model_dim))
     model.add(layers.Flatten())
-    model.add(layers.Dense(16, activation='relu'))
+    model.add(layers.Dense(16, activation='relu', kernel_regularizer=kernel_regularizer))
+    model.add(layers.Dropout(0.3))
     model.add(layers.Dense(1, activation='sigmoid'))
-    
 
     model.summary()
 
     model.compile(loss='binary_crossentropy',
-                  optimizer=optimizers.RMSprop(lr=learning_rate),
+                  optimizer=optimizers.Adam(lr=learning_rate),
                   metrics=['acc'])
 
     # model.build(input_shape)
 
-    history = model.fit(train_features, train_labels, epochs=epochs, batch_size=batch_size, validation_data=(validation_features, validation_labels))
-    '''
+    history = model.fit(train_features, train_labels, epochs=epochs, batch_size=batch_size,
+                        validation_data=(validation_features, validation_labels))
 
     if is_plot_history:
         epochs = history.epoch
@@ -514,7 +553,7 @@ is_pad_imgs_words = False
 is_split_train_validation_datasets = False
 is_use_clf = True
 
-imgs_dir = LINES_REMOVED_BW_IMG_DIR
+imgs_dir = LINES_REMOVED_IMG_DIR
 train_dir = get_train_dir(imgs_dir)
 test_dir = get_test_dir(imgs_dir)
 
