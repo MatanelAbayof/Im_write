@@ -457,6 +457,13 @@ def split_train_validation_datasets(imgs_dir: str, validation_size: float = 0.3)
 
 
 # -------------------------------------------------------------------------------------------------------------
+def shuffle_arrays(arr1, arr2):
+    arr_size = arr1.shape[0]
+    permutation = np.random.permutation(arr_size) - 1
+    return arr1[permutation], arr2[permutation]
+
+
+# -------------------------------------------------------------------------------------------------------------
 def use_clf():
     is_extract_features = False
     is_plot_history = True
@@ -541,10 +548,14 @@ def use_clf():
 
     train_features = np.reshape(train_features, (train_sample_count, base_model_dim))
     validation_features = np.reshape(validation_features, (validation_sample_count, base_model_dim))
+    test_features = np.reshape(test_features, (test_sample_count, base_model_dim))
+
+    train_features, train_labels = shuffle_arrays(train_features, train_labels)
+    validation_features, validation_labels = shuffle_arrays(validation_features, validation_labels)
 
     kernel_regularizer = regularizers.l2(1e-1)  # TODO: check best with gridsearch in loop (have 3 types of regularizer)
     model = Sequential()
-    model.add(layers.Dense(16, kernel_regularizer=kernel_regularizer, activation='relu', input_dim=base_model_dim))
+    model.add(layers.Dense(32, activation='relu', kernel_regularizer=kernel_regularizer, input_dim=base_model_dim))
     model.add(layers.Flatten())
     model.add(layers.Dense(16, activation='relu', kernel_regularizer=kernel_regularizer))
     model.add(layers.Dropout(0.3))
@@ -559,8 +570,9 @@ def use_clf():
     history = model.fit(train_features, train_labels, epochs=epochs, batch_size=batch_size,
                         validation_data=(validation_features, validation_labels))
 
-    test_predicted_result = model.evaluate(test_features, test_labels, batch_size=batch_size)  # TODO: fix this!
-    print('test_predicted_result =', test_predicted_result)
+    test_loss, test_acc = model.evaluate(test_features, test_labels, batch_size=batch_size)
+    print('test_acc =', test_acc)
+    print('test_loss =', test_loss)
 
     if is_plot_history:
         epochs = history.epoch
@@ -592,6 +604,8 @@ def pad_imgs_words(dataset_dir: str, max_word_size=MAX_WORD_SIZE):
 
 
 # endregion
+
+
 
 is_full_build_dataset = False
 is_use_clf = True
