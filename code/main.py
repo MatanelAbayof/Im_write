@@ -6,6 +6,7 @@ import time
 from os import listdir
 from os.path import isfile, join, isdir
 from pathlib import Path
+import cv2
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -40,6 +41,9 @@ ALEX_WEIGHTS_PATH = join(IMG_ROOT_DIR, 'alexnet_weights.h5')
 IMG_DIRECTORIES = [ORIGINAL_IMG_DIR, LINES_REMOVED_BW_IMG_DIR, LINES_REMOVED_IMG_DIR,
                    IMG_POSITIONS_DIR]  # TODO: do this for each images directories (IMG_POSITIONS_DIR must be the last item)
 
+FEATURES_FILE_NAME = 'features.npy'
+LABELS_FILE_NAME = 'labels.npy'
+
 ORIGINAL_IMG_W = 4964
 ORIGINAL_IMG_H = 7020
 TRAIN_DATASET_RANGE = range(1, 3)  # TODO: change `stop` to 204
@@ -51,6 +55,10 @@ MAX_WORD_H = 177
 MAX_WORD_SIZE = (MAX_WORD_W, MAX_WORD_H)
 MIN_WORD_W = 40
 MIN_WORD_H = 40
+
+RELATIVE_SHIFT_IMG_SIZE = 20
+IMWRITE_JPEG_QUALITY = 100  # 0 to 100
+WHITE_COLOR = (0xFF, 0xFF, 0xFF)
 
 
 # endregion
@@ -88,8 +96,47 @@ def full_build_dataset(imgs_dir: str):
     move_words_dir(train_dir)
     split_train_validation_datasets(imgs_dir)
     move_words_dir(test_dir)
+    add_data_argumentation(train_dir)
 
 
+# -------------------------------------------------------------------------------------------------------------
+def add_data_argumentation(train_dir: str):
+    add_shift_imgs(train_dir)
+    # TODO: add rotation with 2 degrees
+
+
+# -------------------------------------------------------------------------------------------------------------
+def add_shift_imgs(train_dir: str):
+    shift_left_func = lambda w, h: (- w / RELATIVE_SHIFT_IMG_SIZE, 0)
+    shift_right_func = lambda w, h: (w / RELATIVE_SHIFT_IMG_SIZE, 0)
+    shift_up_func = lambda w, h: (0, -h / RELATIVE_SHIFT_IMG_SIZE)
+    shift_down_func = lambda w, h: (0, h / RELATIVE_SHIFT_IMG_SIZE)
+    shift_funcs = {'left': shift_left_func, 'right': shift_right_func, 'up': shift_up_func, 'down': shift_down_func}
+    print('adding shift images...')
+    imgs_dirs_names = [d for d in listdir(train_dir) if isdir(join(train_dir, d))]
+    for img_dir_name in imgs_dirs_names:
+        img_dir_path = join(train_dir, img_dir_name)
+        imgs_names = [f for f in listdir(img_dir_path) if isfile(join(img_dir_path, f))]
+        for img_name in imgs_names:
+            img_path = join(img_dir_path, img_name)
+            original_img = cv2.imread(img_path)
+            original_h, original_w = original_img.shape[:2]
+            # cv2.imshow("Originalimage", original_img)
+            for shift_func_name, shift_func in shift_funcs.items():
+                shift_w, shift_h = shift_func(original_w, original_h)
+                M = np.float32([[1, 0, shift_w], [0, 1, shift_h]])
+                img_translation = cv2.warpAffine(src=original_img, M=M, dsize=(original_w, original_h),
+                                                 borderValue=WHITE_COLOR)
+                img_name_without_ex = img_name[:img_name.index('.jpg')]
+                img_translation_name = '{}_{}.jpg'.format(img_name_without_ex, shift_func_name)
+                img_translation_path = join(img_dir_path, img_translation_name)
+                cv2.imwrite(img_translation_path, img_translation, [cv2.IMWRITE_JPEG_QUALITY, IMWRITE_JPEG_QUALITY])
+                # cv2.imshow('{} translation'.format(shift_func_name), img_translation)
+            # cv2.waitKey()
+            # cv2.destroyAllWindows()
+
+
+# -------------------------------------------------------------------------------------------------------------
 def move_words_dir(dataset_dir: str):
     imgs_dirs_names = [d for d in listdir(dataset_dir) if isdir(join(dataset_dir, d))]
     for img_dir_name in imgs_dirs_names:
@@ -357,16 +404,16 @@ def extract_features(sample_count, dataset, batch_size, input_shape):
 
 # -------------------------------------------------------------------------------------------------------------
 def save_features_labels(dataset_dir: str, features, labels):
-    features_file_path = join(dataset_dir, 'features.npy')
-    labels_file_path = join(dataset_dir, 'labels.npy')
+    features_file_path = join(dataset_dir, FEATURES_FILE_NAME)
+    labels_file_path = join(dataset_dir, LABELS_FILE_NAME)
     np.save(features_file_path, features)
     np.save(labels_file_path, labels)
 
 
 # -------------------------------------------------------------------------------------------------------------
 def load_features_labels(dataset_dir: str):
-    features_file_path = join(dataset_dir, 'features.npy')
-    labels_file_path = join(dataset_dir, 'labels.npy')
+    features_file_path = join(dataset_dir, FEATURES_FILE_NAME)
+    labels_file_path = join(dataset_dir, LABELS_FILE_NAME)
     features = np.load(features_file_path)
     labels = np.load(labels_file_path)
     return features, labels
@@ -410,7 +457,7 @@ def split_train_validation_datasets(imgs_dir: str, validation_size: float = 0.3)
 
 # -------------------------------------------------------------------------------------------------------------
 def use_clf():
-    is_extract_features = True
+    is_extract_features = False
     is_plot_history = True
 
     target_size = (MAX_WORD_W, MAX_WORD_H)
@@ -474,22 +521,19 @@ def use_clf():
                         validation_data=validation_dataset)
     '''
 
-    model = Sequential()
+    datasets_names = ['train', 'validation', 'test']
+    datasets_dirs = [train_dir, validation_dir, test_dir]
+    datasets = [train_dataset, validation_dataset, test_dataset]
+    sample_counts = [train_sample_count, validation_sample_count, test_sample_count]
 
     if is_extract_features:
-        train_features, train_labels = extract_features(train_sample_count, train_dataset,
-                                                        batch_size, input_shape)
-        save_features_labels(train_dir, train_features, train_labels)
-        validation_features, validation_labels = extract_features(validation_sample_count,
-                                                                  validation_dataset, batch_size, input_shape)
-        save_features_labels(validation_dir, validation_features, validation_labels)
-        test_features, test_labels = extract_features(test_sample_count,
-                                                      test_dataset, batch_size, input_shape)
-        save_features_labels(test_dir, test_features, test_labels)
-    else:
-        train_features, train_labels = load_features_labels(train_dir)
-        validation_features, validation_labels = load_features_labels(validation_dir)
-        test_features, test_labels = load_features_labels(test_dir)
+        for dataset_name, dataset_dir, dataset, sample_count in zip(datasets_names, datasets_dirs, datasets,
+                                                                    sample_counts):
+            features, labels = extract_features(train_sample_count, train_dataset, batch_size, input_shape)
+            save_features_labels(dataset_dir, features, labels)
+    train_features, train_labels = load_features_labels(train_dir)
+    validation_features, validation_labels = load_features_labels(validation_dir)
+    test_features, test_labels = load_features_labels(test_dir)
 
     base_model_dim = 24 * 5 * 512
 
@@ -497,6 +541,7 @@ def use_clf():
     validation_features = np.reshape(validation_features, (validation_sample_count, base_model_dim))
 
     kernel_regularizer = regularizers.l2(1e-5)  # TODO: check best with gridsearch in loop (have 3 types of regularizer)
+    model = Sequential()
     model.add(layers.Dense(32, kernel_regularizer=kernel_regularizer, activation='relu', input_dim=base_model_dim))
     model.add(layers.Flatten())
     model.add(layers.Dense(16, activation='relu', kernel_regularizer=kernel_regularizer))
