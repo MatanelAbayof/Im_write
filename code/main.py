@@ -95,6 +95,7 @@ def full_build_dataset(imgs_dir: str):
     print('train images words dataset has padded successfully')
     move_words_dir(train_dir)
     split_train_validation_datasets(imgs_dir)
+    pad_imgs_words(dataset_dir=test_dir, max_word_size=MAX_WORD_SIZE)
     move_words_dir(test_dir)
     add_data_argumentation(train_dir)
 
@@ -486,7 +487,7 @@ def use_clf():
     validation_sample_count = len(validation_dataset.filenames)
     test_sample_count = len(test_dataset.filenames)
 
-    epochs = 20
+    epochs = 10
     learning_rate = 0.0001
     steps_per_epoch = train_sample_count // num_of_cls
 
@@ -529,7 +530,8 @@ def use_clf():
     if is_extract_features:
         for dataset_name, dataset_dir, dataset, sample_count in zip(datasets_names, datasets_dirs, datasets,
                                                                     sample_counts):
-            features, labels = extract_features(train_sample_count, train_dataset, batch_size, input_shape)
+            print('extract features for', dataset_name)
+            features, labels = extract_features(sample_count, dataset, batch_size, input_shape)
             save_features_labels(dataset_dir, features, labels)
     train_features, train_labels = load_features_labels(train_dir)
     validation_features, validation_labels = load_features_labels(validation_dir)
@@ -540,9 +542,9 @@ def use_clf():
     train_features = np.reshape(train_features, (train_sample_count, base_model_dim))
     validation_features = np.reshape(validation_features, (validation_sample_count, base_model_dim))
 
-    kernel_regularizer = regularizers.l2(1e-5)  # TODO: check best with gridsearch in loop (have 3 types of regularizer)
+    kernel_regularizer = regularizers.l2(1e-1)  # TODO: check best with gridsearch in loop (have 3 types of regularizer)
     model = Sequential()
-    model.add(layers.Dense(32, kernel_regularizer=kernel_regularizer, activation='relu', input_dim=base_model_dim))
+    model.add(layers.Dense(16, kernel_regularizer=kernel_regularizer, activation='relu', input_dim=base_model_dim))
     model.add(layers.Flatten())
     model.add(layers.Dense(16, activation='relu', kernel_regularizer=kernel_regularizer))
     model.add(layers.Dropout(0.3))
