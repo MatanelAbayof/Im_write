@@ -464,9 +464,37 @@ def shuffle_arrays(arr1, arr2):
 
 
 # -------------------------------------------------------------------------------------------------------------
+def build_model(kernel_regularizer, base_model_dim, learning_rate):
+    model = Sequential()
+    model.add(layers.Dense(32, activation='relu', kernel_regularizer=kernel_regularizer, input_dim=base_model_dim))
+    model.add(layers.Flatten())
+    model.add(layers.Dense(16, activation='relu', kernel_regularizer=kernel_regularizer))
+    model.add(layers.Dropout(0.3))
+    model.add(layers.Dense(1, activation='sigmoid'))
+
+    model.compile(loss='binary_crossentropy',
+                  optimizer=optimizers.Adam(lr=learning_rate),
+                  metrics=['acc'])
+    return model
+
+
+# -------------------------------------------------------------------------------------------------------------
+def train_model(model, train_features, train_labels, epochs, batch_size,
+                validation_features, validation_labels, test_features, test_labels):
+    history = model.fit(train_features, train_labels, epochs=epochs, batch_size=batch_size,
+                        validation_data=(validation_features, validation_labels))
+
+    test_loss, test_acc = model.evaluate(test_features, test_labels, batch_size=batch_size)
+    print('test_acc =', test_acc)
+    print('test_loss =', test_loss)
+    return history, test_loss, test_acc
+
+
+# -------------------------------------------------------------------------------------------------------------
 def use_clf():
     is_extract_features = False
     is_plot_history = True
+    is_grid_search_regularizer = False
 
     target_size = (MAX_WORD_W, MAX_WORD_H)
     print('target_size = ', target_size)
@@ -489,14 +517,14 @@ def use_clf():
                                                 color_mode=color_mode, class_mode='binary',
                                                 batch_size=batch_size)
 
-    num_of_cls = len(train_dataset.class_indices)
+    # num_of_cls = len(train_dataset.class_indices)
     train_sample_count = len(train_dataset.filenames)
     validation_sample_count = len(validation_dataset.filenames)
     test_sample_count = len(test_dataset.filenames)
 
     epochs = 10
     learning_rate = 0.0001
-    steps_per_epoch = train_sample_count // num_of_cls
+    # steps_per_epoch = train_sample_count // num_of_cls
 
     input_shape = (*target_size, 3)  # 1 for grayscale or 3 for rgb
     print('input_shape = ', input_shape)
@@ -537,7 +565,7 @@ def use_clf():
     if is_extract_features:
         for dataset_name, dataset_dir, dataset, sample_count in zip(datasets_names, datasets_dirs, datasets,
                                                                     sample_counts):
-            print('extract features for', dataset_name)
+            print('extract features for'.format(dataset_name))
             features, labels = extract_features(sample_count, dataset, batch_size, input_shape)
             save_features_labels(dataset_dir, features, labels)
     train_features, train_labels = load_features_labels(train_dir)
@@ -553,46 +581,54 @@ def use_clf():
     train_features, train_labels = shuffle_arrays(train_features, train_labels)
     validation_features, validation_labels = shuffle_arrays(validation_features, validation_labels)
 
-    kernel_regularizer = regularizers.l2(1e-1)  # TODO: check best with gridsearch in loop (have 3 types of regularizer)
-    model = Sequential()
-    model.add(layers.Dense(32, activation='relu', kernel_regularizer=kernel_regularizer, input_dim=base_model_dim))
-    model.add(layers.Flatten())
-    model.add(layers.Dense(16, activation='relu', kernel_regularizer=kernel_regularizer))
-    model.add(layers.Dropout(0.3))
-    model.add(layers.Dense(1, activation='sigmoid'))
+    if is_grid_search_regularizer:
+        kernel_regularizers = np.linspace(1e-5, 1e-1, num=7)
+        best_acc = 0
+        best_regularizer = None
+        for kernel_regularizer_val in kernel_regularizers:
+            kernel_regularizer = regularizers.l2(kernel_regularizer_val)
+            print('checking regularizer {}...'.format(kernel_regularizer_val))
+            model = build_model(kernel_regularizer, base_model_dim, learning_rate)
+            history, test_loss, test_acc = train_model(model=model, train_features=train_features,
+                                                       train_labels=train_labels,
+                                                       epochs=epochs, batch_size=batch_size,
+                                                       validation_features=validation_features,
+                                                       validation_labels=validation_labels, test_features=test_features,
+                                                       test_labels=test_labels)
+            if test_acc > best_acc:
+                best_acc = test_acc
+                best_regularizer = kernel_regularizer
+        print('best_regularizer =', best_regularizer)
+    else:
+        kernel_regularizer = regularizers.l2(0.03)
+        model = build_model(kernel_regularizer, base_model_dim, learning_rate)
+        model.summary()
+        history, test_loss, test_acc = train_model(model=model, train_features=train_features,
+                                                   train_labels=train_labels,
+                                                   epochs=epochs, batch_size=batch_size,
+                                                   validation_features=validation_features,
+                                                   validation_labels=validation_labels, test_features=test_features,
+                                                   test_labels=test_labels)
 
-    model.summary()
+        if is_plot_history:
+            epochs = history.epoch
+            hyper_params = history.history
 
-    model.compile(loss='binary_crossentropy',
-                  optimizer=optimizers.Adam(lr=learning_rate),
-                  metrics=['acc'])
+            acc = hyper_params['acc']
+            val_acc = hyper_params['val_acc']
+            loss = hyper_params['loss']
+            val_loss = hyper_params['val_loss']
 
-    history = model.fit(train_features, train_labels, epochs=epochs, batch_size=batch_size,
-                        validation_data=(validation_features, validation_labels))
-
-    test_loss, test_acc = model.evaluate(test_features, test_labels, batch_size=batch_size)
-    print('test_acc =', test_acc)
-    print('test_loss =', test_loss)
-
-    if is_plot_history:
-        epochs = history.epoch
-        hyper_params = history.history
-
-        acc = hyper_params['acc']
-        val_acc = hyper_params['val_acc']
-        loss = hyper_params['loss']
-        val_loss = hyper_params['val_loss']
-
-        plt.plot(epochs, acc, 'bo', label='Training acc')
-        plt.plot(epochs, val_acc, 'b', label='Validation acc')
-        plt.title('Training and validation accuracy')
-        plt.legend()
-        plt.figure()
-        plt.plot(epochs, loss, 'bo', label='Training loss')
-        plt.plot(epochs, val_loss, 'b', label='Validation loss')
-        plt.title('Training and validation loss')
-        plt.legend()
-        plt.show()
+            plt.plot(epochs, acc, 'bo', label='Training acc')
+            plt.plot(epochs, val_acc, 'b', label='Validation acc')
+            plt.title('Training and validation accuracy')
+            plt.legend()
+            plt.figure()
+            plt.plot(epochs, loss, 'bo', label='Training loss')
+            plt.plot(epochs, val_loss, 'b', label='Validation loss')
+            plt.title('Training and validation loss')
+            plt.legend()
+            plt.show()
 
 
 # -------------------------------------------------------------------------------------------------------------
@@ -604,7 +640,6 @@ def pad_imgs_words(dataset_dir: str, max_word_size=MAX_WORD_SIZE):
 
 
 # endregion
-
 
 
 is_full_build_dataset = False
