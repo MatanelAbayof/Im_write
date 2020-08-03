@@ -7,7 +7,7 @@ from os import listdir
 from os.path import isfile, join, isdir
 from pathlib import Path
 import cv2
-
+import keras
 import matplotlib.pyplot as plt
 import numpy as np
 import pytesseract
@@ -19,6 +19,7 @@ from keras.models import Sequential
 from keras.preprocessing.image import ImageDataGenerator
 from pytesseract import Output
 from tensorflow.keras import layers, optimizers
+from sklearn.metrics import classification_report, confusion_matrix, precision_score
 
 pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 
@@ -517,12 +518,12 @@ def use_clf():
                                                 color_mode=color_mode, class_mode='binary',
                                                 batch_size=batch_size)
 
-    # num_of_cls = len(train_dataset.class_indices)
+    num_of_cls = len(train_dataset.class_indices)
     train_sample_count = len(train_dataset.filenames)
     validation_sample_count = len(validation_dataset.filenames)
     test_sample_count = len(test_dataset.filenames)
 
-    epochs = 10
+    epochs = 5
     learning_rate = 0.0001
     # steps_per_epoch = train_sample_count // num_of_cls
 
@@ -609,6 +610,20 @@ def use_clf():
                                                    validation_features=validation_features,
                                                    validation_labels=validation_labels, test_features=test_features,
                                                    test_labels=test_labels)
+        y_pred = model.predict_classes(test_features, batch_size=batch_size).ravel()
+        # y_pred = np.argmax(y_pred, axis=1)
+        print('Confusion Matrix')
+        print(confusion_matrix(test_labels, y_pred))
+        print('Classification Report')
+        target_names = ['Writer {}'.format(i+1) for i in range(num_of_cls)]
+        print(classification_report(test_labels, y_pred, target_names=target_names))
+        avgs = precision_score(test_labels, y_pred, average=None)   
+        print('avgs =', avgs)
+        bad_preds = [1 if avg < 0.5 else 0 for avg in avgs]
+        print('bad_preds =', bad_preds)
+        weighted_avg = precision_score(test_labels, y_pred, average='weighted')
+        print('weighted_avg =', weighted_avg)
+
 
         if is_plot_history:
             epochs = history.epoch
