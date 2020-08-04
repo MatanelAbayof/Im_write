@@ -69,6 +69,7 @@ WHITE_COLOR = (0xFF, 0xFF, 0xFF)
 # region Functions
 # -------------------------------------------------------------------------------------------------------------
 def full_build_dataset(imgs_dir: str):
+    '''
     print('fixing images names...')
     fix_imgs_names()
     print('finding maximum train line height...')
@@ -105,23 +106,20 @@ def full_build_dataset(imgs_dir: str):
     print('moving words to test directory...')
     move_words_dir(test_dir)
     print('adding data argumentation...')
+    '''
     add_data_argumentation(train_dir)
 
 
 # -------------------------------------------------------------------------------------------------------------
 def add_data_argumentation(train_dir: str):
-    add_shift_imgs(train_dir)
-    # TODO: add rotation with 2 degrees & add blur
-
-    # TODO: move data argumentation images to train directory
-
-
-# -------------------------------------------------------------------------------------------------------------
-def add_shift_imgs(train_dir: str):
     shift_left_func = lambda w, h: (- w / RELATIVE_SHIFT_IMG_SIZE, 0)
     shift_right_func = lambda w, h: (w / RELATIVE_SHIFT_IMG_SIZE, 0)
     shift_up_func = lambda w, h: (0, -h / RELATIVE_SHIFT_IMG_SIZE)
     shift_down_func = lambda w, h: (0, h / RELATIVE_SHIFT_IMG_SIZE)
+    rotate_left_func = lambda w, h, angle, var: (w // 2, h // 2, -angle , var)
+    rotate_right_func = lambda w, h, angle, var: (w // 2, h // 2, angle , var)
+    # TODO: add blur
+    rotate_funcs = {'rotate_left': rotate_left_func, 'rotate_right': rotate_right_func}
     shift_funcs = {'left': shift_left_func, 'right': shift_right_func, 'up': shift_up_func, 'down': shift_down_func}
     print('adding shift images...')
     imgs_dirs_names = [d for d in listdir(train_dir) if isdir(join(train_dir, d))]
@@ -140,11 +138,23 @@ def add_shift_imgs(train_dir: str):
                                                  borderValue=WHITE_COLOR)
                 img_name_without_ex = img_name[:img_name.index('.jpg')]
                 img_translation_name = '{}_{}.jpg'.format(img_name_without_ex, shift_func_name)
-                img_translation_path = join(img_dir_path, img_translation_name) # TODO: need to be in sub-folder
+                img_translation_path = join(img_dir_path, img_translation_name)
+                cv2.imwrite(img_translation_path, img_translation, [cv2.IMWRITE_JPEG_QUALITY, IMWRITE_JPEG_QUALITY])
+            angle = 3
+            var = 1.0
+            for rotate_func_name, rotate_func in rotate_funcs.items():
+                rot_w, rot_h, rot_angle, v = rotate_func(original_w, original_h, angle, var)
+                M = cv2.getRotationMatrix2D((rot_w, rot_h), rot_angle, v)
+                img_translation = cv2.warpAffine(src=original_img, M=M, dsize=(original_w, original_h),
+                                                 borderValue=WHITE_COLOR)
+                img_name_without_ex = img_name[:img_name.index('.jpg')]
+                img_translation_name = '{}_{}.jpg'.format(img_name_without_ex, rotate_func_name)
+                img_translation_path = join(img_dir_path, img_translation_name)
                 cv2.imwrite(img_translation_path, img_translation, [cv2.IMWRITE_JPEG_QUALITY, IMWRITE_JPEG_QUALITY])
                 # cv2.imshow('{} translation'.format(shift_func_name), img_translation)
             # cv2.waitKey()
             # cv2.destroyAllWindows()
+
 
 
 # -------------------------------------------------------------------------------------------------------------
@@ -533,7 +543,7 @@ def use_clf():
     validation_sample_count = len(validation_dataset.filenames)
     test_sample_count = len(test_dataset.filenames)
 
-    epochs = 10
+    epochs = 30
     learning_rate = 0.0001
     # steps_per_epoch = train_sample_count // num_of_cls
 
@@ -622,6 +632,13 @@ def use_clf():
                                                    test_labels=test_labels)
         y_pred = model.predict_classes(test_features, batch_size=batch_size)
         y_true = np.argmax(test_labels, axis=1)
+        c_matrix = np.zeros(shape=(num_of_cls, num_of_cls), dtype=int)
+        for pred_val, true_val in zip(y_pred, y_true):
+            c_matrix[true_val, pred_val] += 1
+        print('y_pred =', y_pred)
+        print('y_true =', y_true)
+        print('c_matrix =', c_matrix)
+        '''
         print('Confusion Matrix')
         print(confusion_matrix(y_true, y_pred))
         print('Classification Report')
@@ -635,6 +652,7 @@ def use_clf():
         n_good_preds = len(avgs) - n_bad_preds
         weighted_avg = n_good_preds / len(avgs)
         print('weighted_avg =', weighted_avg)
+        '''
 
 
         if is_plot_history:
