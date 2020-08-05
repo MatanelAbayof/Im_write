@@ -14,7 +14,7 @@ import pytesseract
 import scipy.io
 from PIL import Image, ImageOps
 from keras import regularizers
-from keras.applications import VGG16, ResNet50, VGG19
+from keras.applications import VGG16, ResNet50, VGG19, DenseNet201
 from keras.models import Sequential
 from keras.preprocessing.image import ImageDataGenerator
 from pytesseract import Output
@@ -405,7 +405,7 @@ def find_max_word_size(imgs_dir: str):
 
 # -------------------------------------------------------------------------------------------------------------
 def extract_features(sample_count, dataset, batch_size, input_shape, n_of_cls: int):
-    conv_base = VGG19(weights='imagenet', include_top=False, input_shape=input_shape)
+    conv_base = DenseNet201(weights='imagenet', include_top=False, input_shape=input_shape)
 
     conv_base.summary()
 
@@ -487,16 +487,16 @@ def shuffle_arrays(arr1, arr2):
 
 
 # -------------------------------------------------------------------------------------------------------------
-def build_model(kernel_regularizer, base_model_dim, learning_rate, n_of_cls):
+def build_model(kernel_regularizer, base_model_dim, learning_rate, n_of_cls: int):
     bias_regularizer= None # regularizers.l2(1e-8)
     activity_regularizer= None # regularizers.l2(1e-5)
     model = Sequential()
-    model.add(layers.Dense(48, activation='relu', kernel_regularizer=kernel_regularizer, bias_regularizer=bias_regularizer,
+    model.add(layers.Dense(128, activation='relu', kernel_regularizer=kernel_regularizer, bias_regularizer=bias_regularizer,
                              activity_regularizer=activity_regularizer,input_dim=base_model_dim))
     model.add(layers.Flatten())
-    model.add(layers.Dropout(0.2))
-    model.add(layers.Dense(48, activation='relu', kernel_regularizer=kernel_regularizer, activity_regularizer=activity_regularizer, bias_regularizer=bias_regularizer))
-    model.add(layers.Dropout(0.2))
+    model.add(layers.Dense(128, activation='relu', kernel_regularizer=kernel_regularizer, activity_regularizer=activity_regularizer, bias_regularizer=bias_regularizer))
+    model.add(layers.Dense(128, activation='relu', kernel_regularizer=kernel_regularizer, activity_regularizer=activity_regularizer, bias_regularizer=bias_regularizer))
+    model.add(layers.Dropout(0.3))
     model.add(layers.Dense(n_of_cls, activation='softmax')) # for binary use sigmoid with 1 unit. otherwise use  softmax with number of classes units
 
     model.compile(loss='categorical_crossentropy',
@@ -526,7 +526,7 @@ def use_clf():
     target_size = DATASET_DIM
     print('target_size = ', target_size)
 
-    batch_size = 5
+    batch_size = 30
 
     # create a data generator
     # shift_side = 0.1
@@ -550,7 +550,7 @@ def use_clf():
     validation_sample_count = len(validation_dataset.filenames)
     test_sample_count = len(test_dataset.filenames)
 
-    epochs = 50
+    epochs = 15
     learning_rate = 0.0001
     # steps_per_epoch = train_sample_count // num_of_cls
 
@@ -600,7 +600,7 @@ def use_clf():
     validation_features, validation_labels = load_features_labels(validation_dir)
     test_features, test_labels = load_features_labels(test_dir)
 
-    base_model_dim = 9 * 1 * 512
+    base_model_dim = 10 * 1 * 1920
 
     train_features = np.reshape(train_features, (train_sample_count, base_model_dim))
     validation_features = np.reshape(validation_features, (validation_sample_count, base_model_dim))
@@ -610,7 +610,7 @@ def use_clf():
     validation_features, validation_labels = shuffle_arrays(validation_features, validation_labels)
 
     if is_grid_search_regularizer:
-        kernel_regularizers = np.linspace(1e-7, 1e-1, num=5)
+        kernel_regularizers = np.linspace(1e-10, 1e-5, num=5)
         best_acc = 0
         best_regularizer = None
         for kernel_regularizer_val in kernel_regularizers:
@@ -628,7 +628,7 @@ def use_clf():
                 best_regularizer = kernel_regularizer_val
         print('best_regularizer =', best_regularizer)
     else:
-        kernel_regularizer = regularizers.l2(1e-5)
+        kernel_regularizer = regularizers.l2(1e-4)
         model = build_model(kernel_regularizer, base_model_dim, learning_rate, num_of_cls)
         model.summary()
         history, test_loss, test_acc = train_model(model=model, train_features=train_features,
