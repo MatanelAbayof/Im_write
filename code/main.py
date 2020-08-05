@@ -48,13 +48,14 @@ LABELS_FILE_NAME = 'labels.npy'
 
 ORIGINAL_IMG_W = 4964
 ORIGINAL_IMG_H = 7020
-TRAIN_DATASET_RANGE = range(1, 4)  # TODO: change `stop` to 204
-MAX_TRAIN_LINE_H = 165
+TRAIN_DATASET_RANGE = range(1, 11)  # TODO: change `stop` to 204
+MAX_TRAIN_LINE_H = 170
 MAX_TEST_LINE_H = 181
 MAX_LINE_H = max(MAX_TRAIN_LINE_H, MAX_TEST_LINE_H)
-MAX_WORD_W = 776
-MAX_WORD_H = 177
+MAX_WORD_W = 1275
+MAX_WORD_H = 178
 REDUCE_WORDS = 4
+ROTATE_ANGLE = 5
 MAX_WORD_SIZE = (MAX_WORD_W, MAX_WORD_H)
 MIN_WORD_W = 40
 MIN_WORD_H = 40
@@ -118,10 +119,8 @@ def add_data_argumentation(train_dir: str):
     shift_down_func = lambda w, h: (0, h / RELATIVE_SHIFT_IMG_SIZE)
     rotate_left_func = lambda w, h, angle, var: (w // 2, h // 2, -angle , var)
     rotate_right_func = lambda w, h, angle, var: (w // 2, h // 2, angle , var)
-    # TODO: add blur
     rotate_funcs = {'rotate_left': rotate_left_func, 'rotate_right': rotate_right_func}
     shift_funcs = {'left': shift_left_func, 'right': shift_right_func, 'up': shift_up_func, 'down': shift_down_func}
-    print('adding shift images...')
     imgs_dirs_names = [d for d in listdir(train_dir) if isdir(join(train_dir, d))]
     for img_dir_name in imgs_dirs_names:
         img_dir_path = join(train_dir, img_dir_name)
@@ -140,7 +139,7 @@ def add_data_argumentation(train_dir: str):
                 img_translation_name = '{}_{}.jpg'.format(img_name_without_ex, shift_func_name)
                 img_translation_path = join(img_dir_path, img_translation_name)
                 cv2.imwrite(img_translation_path, img_translation, [cv2.IMWRITE_JPEG_QUALITY, IMWRITE_JPEG_QUALITY])
-            angle = 3
+            angle = ROTATE_ANGLE
             var = 1.0
             for rotate_func_name, rotate_func in rotate_funcs.items():
                 rot_w, rot_h, rot_angle, v = rotate_func(original_w, original_h, angle, var)
@@ -152,9 +151,13 @@ def add_data_argumentation(train_dir: str):
                 img_translation_path = join(img_dir_path, img_translation_name)
                 cv2.imwrite(img_translation_path, img_translation, [cv2.IMWRITE_JPEG_QUALITY, IMWRITE_JPEG_QUALITY])
                 # cv2.imshow('{} translation'.format(shift_func_name), img_translation)
+            blur = cv2.blur(original_img,(5,5))
+            img_name_without_ex = img_name[:img_name.index('.jpg')]
+            img_translation_name = '{}_{}.jpg'.format(img_name_without_ex, 'blur')
+            img_translation_path = join(img_dir_path, img_translation_name)
+            cv2.imwrite(img_translation_path, blur, [cv2.IMWRITE_JPEG_QUALITY, IMWRITE_JPEG_QUALITY])
             # cv2.waitKey()
             # cv2.destroyAllWindows()
-
 
 
 # -------------------------------------------------------------------------------------------------------------
@@ -208,13 +211,13 @@ def is_white_img(img: Image):  # TODO: improve run time
 def find_max_train_line_h():
     lines_h = []
     for img_num in TRAIN_DATASET_RANGE:
-        print('checking image number ', img_num)
+        # print('checking image number ', img_num)
         line_info = load_img_lines_info(img_num=img_num)
         y_positions = parse_y_positions(line_info)
         for idx in range(len(y_positions) - 1):
             line_h = y_positions[idx + 1] - y_positions[idx]
             lines_h.append(line_h)
-    print('lines height = ', lines_h)
+    # print('lines height = ', lines_h)
     return max(lines_h)
 
 
@@ -222,13 +225,13 @@ def find_max_train_line_h():
 def find_max_test_line_h():
     lines_h = []
     for img_num in TRAIN_DATASET_RANGE:
-        print('checking image number ', img_num)
+        # print('checking image number ', img_num)
         line_info = load_img_lines_info(img_num)
         top_test_area = line_info['top_test_area'].flatten()[0]
         bottom_test_area = line_info['bottom_test_area'].flatten()[0]
         line_h = bottom_test_area - top_test_area
         lines_h.append(line_h)
-    print('lines height = ', lines_h)
+    # print('lines height = ', lines_h)
     return max(lines_h)
 
 
@@ -485,11 +488,15 @@ def shuffle_arrays(arr1, arr2):
 
 # -------------------------------------------------------------------------------------------------------------
 def build_model(kernel_regularizer, base_model_dim, learning_rate, n_of_cls):
+    bias_regularizer= None # regularizers.l2(1e-8)
+    activity_regularizer= None # regularizers.l2(1e-5)
     model = Sequential()
-    model.add(layers.Dense(32, activation='relu', kernel_regularizer=kernel_regularizer, input_dim=base_model_dim))
+    model.add(layers.Dense(48, activation='relu', kernel_regularizer=kernel_regularizer, bias_regularizer=bias_regularizer,
+                             activity_regularizer=activity_regularizer,input_dim=base_model_dim))
     model.add(layers.Flatten())
-    model.add(layers.Dense(16, activation='relu', kernel_regularizer=kernel_regularizer))
-    model.add(layers.Dropout(0.3))
+    model.add(layers.Dropout(0.2))
+    model.add(layers.Dense(48, activation='relu', kernel_regularizer=kernel_regularizer, activity_regularizer=activity_regularizer, bias_regularizer=bias_regularizer))
+    model.add(layers.Dropout(0.2))
     model.add(layers.Dense(n_of_cls, activation='softmax')) # for binary use sigmoid with 1 unit. otherwise use  softmax with number of classes units
 
     model.compile(loss='categorical_crossentropy',
@@ -522,7 +529,7 @@ def use_clf():
     batch_size = 5
 
     # create a data generator
-    shift_side = 0.1
+    # shift_side = 0.1
     # train_gen = ImageDataGenerator(rotation_range=2, width_shift_range=shift_side, height_shift_range=shift_side)
     train_gen = ImageDataGenerator()
     color_mode = 'rgb' # VGGxx want rgb!
@@ -543,7 +550,7 @@ def use_clf():
     validation_sample_count = len(validation_dataset.filenames)
     test_sample_count = len(test_dataset.filenames)
 
-    epochs = 30
+    epochs = 50
     learning_rate = 0.0001
     # steps_per_epoch = train_sample_count // num_of_cls
 
@@ -593,7 +600,7 @@ def use_clf():
     validation_features, validation_labels = load_features_labels(validation_dir)
     test_features, test_labels = load_features_labels(test_dir)
 
-    base_model_dim = 6 * 1 * 512
+    base_model_dim = 9 * 1 * 512
 
     train_features = np.reshape(train_features, (train_sample_count, base_model_dim))
     validation_features = np.reshape(validation_features, (validation_sample_count, base_model_dim))
@@ -603,7 +610,7 @@ def use_clf():
     validation_features, validation_labels = shuffle_arrays(validation_features, validation_labels)
 
     if is_grid_search_regularizer:
-        kernel_regularizers = np.linspace(1e-5, 1e-1, num=7)
+        kernel_regularizers = np.linspace(1e-7, 1e-1, num=5)
         best_acc = 0
         best_regularizer = None
         for kernel_regularizer_val in kernel_regularizers:
@@ -621,7 +628,7 @@ def use_clf():
                 best_regularizer = kernel_regularizer_val
         print('best_regularizer =', best_regularizer)
     else:
-        kernel_regularizer = regularizers.l2(0.07)
+        kernel_regularizer = regularizers.l2(1e-5)
         model = build_model(kernel_regularizer, base_model_dim, learning_rate, num_of_cls)
         model.summary()
         history, test_loss, test_acc = train_model(model=model, train_features=train_features,
@@ -632,12 +639,24 @@ def use_clf():
                                                    test_labels=test_labels)
         y_pred = model.predict_classes(test_features, batch_size=batch_size)
         y_true = np.argmax(test_labels, axis=1)
-        c_matrix = np.zeros(shape=(num_of_cls, num_of_cls), dtype=int)
+        words_c_matrix = np.zeros(shape=(num_of_cls, num_of_cls), dtype=int)
         for pred_val, true_val in zip(y_pred, y_true):
-            c_matrix[true_val, pred_val] += 1
-        print('y_pred =', y_pred)
-        print('y_true =', y_true)
-        print('c_matrix =', c_matrix)
+            words_c_matrix[true_val, pred_val] += 1
+
+        #print('y_pred =', y_pred)
+        #print('y_true =', y_true)
+        print('words_c_matrix:\n', words_c_matrix)
+        lines_c_matrix = np.zeros(shape=(num_of_cls, num_of_cls), dtype=int)
+        for i in range(num_of_cls):
+            writer_label = np.argmax(words_c_matrix[i])
+            lines_c_matrix[i, writer_label] = 1
+        print('lines_c_matrix:\n', lines_c_matrix)
+        
+        n_good_lines_preds = np.sum(lines_c_matrix.diagonal())
+        test_lines_acc = n_good_lines_preds / num_of_cls
+        print('n_good_lines_preds = ', n_good_lines_preds)
+        print('test_lines_acc = ', test_lines_acc)
+
         '''
         print('Confusion Matrix')
         print(confusion_matrix(y_true, y_pred))
