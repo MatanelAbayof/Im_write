@@ -21,6 +21,7 @@ from pytesseract import Output
 from tensorflow.keras import layers, optimizers
 from sklearn.metrics import classification_report, confusion_matrix, precision_score
 from tensorflow.keras.utils import to_categorical
+import pickle
 
 pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 
@@ -45,6 +46,7 @@ IMG_DIRECTORIES = [ORIGINAL_IMG_DIR, LINES_REMOVED_BW_IMG_DIR, LINES_REMOVED_IMG
 
 FEATURES_FILE_NAME = 'features.npy'
 LABELS_FILE_NAME = 'labels.npy'
+FILES_PATHS_FILE_NAME = 'files_paths.pickle'
 
 ORIGINAL_IMG_W = 4964
 ORIGINAL_IMG_H = 7020
@@ -63,6 +65,7 @@ DATASET_DIM = (MAX_WORD_W // REDUCE_WORDS, MAX_WORD_H // REDUCE_WORDS)
 RELATIVE_SHIFT_IMG_SIZE = 20
 IMWRITE_JPEG_QUALITY = 100  # 0 to 100
 WHITE_COLOR = (0xFF, 0xFF, 0xFF)
+N_IMAGES_TO_SHOW = 9
 
 
 # endregion
@@ -70,7 +73,6 @@ WHITE_COLOR = (0xFF, 0xFF, 0xFF)
 # region Functions
 # -------------------------------------------------------------------------------------------------------------
 def full_build_dataset(imgs_dir: str):
-    '''
     print('fixing images names...')
     fix_imgs_names()
     print('finding maximum train line height...')
@@ -107,7 +109,6 @@ def full_build_dataset(imgs_dir: str):
     print('moving words to test directory...')
     move_words_dir(test_dir)
     print('adding data argumentation...')
-    '''
     add_data_argumentation(train_dir)
 
 
@@ -123,6 +124,7 @@ def add_data_argumentation(train_dir: str):
     shift_funcs = {'left': shift_left_func, 'right': shift_right_func, 'up': shift_up_func, 'down': shift_down_func}
     imgs_dirs_names = [d for d in listdir(train_dir) if isdir(join(train_dir, d))]
     for img_dir_name in imgs_dirs_names:
+        print('scanning image number {}...'.format(img_dir_name))
         img_dir_path = join(train_dir, img_dir_name)
         imgs_names = [f for f in listdir(img_dir_path) if isfile(join(img_dir_path, f))]
         for img_name in imgs_names:
@@ -234,6 +236,32 @@ def find_max_test_line_h():
     # print('lines height = ', lines_h)
     return max(lines_h)
 
+def show_9_images(title, the_images, the_labels, images_paths):
+    if the_images.size == 0:
+        return
+
+    fig, axs = plt.subplots(3, 3, figsize=(8, 8))
+    fig.suptitle(title, fontsize=16)
+
+    L = len(the_labels)
+
+    k = 0
+    for i in range(0, 3):
+        for j in range(0, 3):
+            img = the_images[k, :]
+            label = the_labels[k]
+            img_path = images_paths[k]
+            img_name = os.path.basename(img_path)
+
+            axs[i, j].imshow(img)
+            axs[i, j].title.set_text('{} | {}'.format(label, img_name))
+            axs[i, j].axis('off')
+            k += 1
+            if k >= L:
+                plt.show()
+                return
+
+    plt.show()
 
 # -------------------------------------------------------------------------------------------------------------
 def fix_imgs_names():
@@ -409,6 +437,8 @@ def extract_features(sample_count, dataset, batch_size, input_shape, n_of_cls: i
 
     conv_base.summary()
 
+    files_paths = [join(dataset.directory, file_name) for file_name in dataset.filenames]
+
     conv_base_output_shape = conv_base.layers[-1].output.shape[1:]  # get shape of last layer
     features_shape = (sample_count, *conv_base_output_shape)
 
@@ -423,24 +453,31 @@ def extract_features(sample_count, dataset, batch_size, input_shape, n_of_cls: i
         print(i * batch_size, "====>", sample_count)
         if i * batch_size >= sample_count:
             break
-    return features, labels
+    
+    return features, labels, files_paths
 
 
 # -------------------------------------------------------------------------------------------------------------
-def save_features_labels(dataset_dir: str, features, labels):
+def save_features_labels(dataset_dir: str, features, labels, files_paths):
     features_file_path = join(dataset_dir, FEATURES_FILE_NAME)
     labels_file_path = join(dataset_dir, LABELS_FILE_NAME)
+    files_paths_path = join(dataset_dir, FILES_PATHS_FILE_NAME)
     np.save(features_file_path, features)
     np.save(labels_file_path, labels)
+    with open(files_paths_path,  'wb') as f:
+        pickle.dump(files_paths, f)
 
 
 # -------------------------------------------------------------------------------------------------------------
 def load_features_labels(dataset_dir: str):
     features_file_path = join(dataset_dir, FEATURES_FILE_NAME)
     labels_file_path = join(dataset_dir, LABELS_FILE_NAME)
+    files_paths_path = join(dataset_dir, FILES_PATHS_FILE_NAME)
     features = np.load(features_file_path)
     labels = np.load(labels_file_path)
-    return features, labels
+    with open(files_paths_path,  'rb') as f:
+        files_paths = pickle.load(f)
+    return features, labels, files_paths
 
 
 # -------------------------------------------------------------------------------------------------------------
@@ -480,10 +517,10 @@ def split_train_validation_datasets(imgs_dir: str, validation_size: float = 0.3)
 
 
 # -------------------------------------------------------------------------------------------------------------
-def shuffle_arrays(arr1, arr2):
+def shuffle_arrays(arr1, arr2, arr3):
     arr_size = arr1.shape[0]
     permutation = np.random.permutation(arr_size) - 1
-    return arr1[permutation], arr2[permutation]
+    return arr1[permutation], arr2[permutation], np.array(arr3, dtype='S')[permutation].tolist()
 
 
 # -------------------------------------------------------------------------------------------------------------
@@ -491,6 +528,8 @@ def build_model(kernel_regularizer, base_model_dim, learning_rate, n_of_cls: int
     bias_regularizer= None # regularizers.l2(1e-8)
     activity_regularizer= None # regularizers.l2(1e-5)
     model = Sequential()
+    #TODO: try max pooling for better performance
+    #model.add(layers.MaxPool2D(pool_size=(4, 4)))
     model.add(layers.Dense(128, activation='relu', kernel_regularizer=kernel_regularizer, bias_regularizer=bias_regularizer,
                              activity_regularizer=activity_regularizer,input_dim=base_model_dim))
     model.add(layers.Flatten())
@@ -517,11 +556,19 @@ def train_model(model, train_features, train_labels, epochs, batch_size,
     return history, test_loss, test_acc
 
 
+def get_writers_numbers(labels):
+    writers_nums = np.argmax(labels, axis=1)
+    writers_nums[writers_nums == 1] = 10
+    writers_nums[writers_nums == 0] = 1
+    return writers_nums
+
 # -------------------------------------------------------------------------------------------------------------
 def use_clf():
     is_extract_features = False
     is_plot_history = False
     is_grid_search_regularizer = False
+    is_show_wrong_pred_imgs = True
+    is_show_dataset_imgs = True
 
     target_size = DATASET_DIM
     print('target_size = ', target_size)
@@ -535,15 +582,17 @@ def use_clf():
     color_mode = 'rgb' # VGGxx want rgb!
     class_mode = 'categorical' # `binary` for 2 images. otherwise use `categorical`
     train_dataset = train_gen.flow_from_directory(train_dir, target_size=target_size, color_mode=color_mode,
-                                                  class_mode=class_mode, batch_size=batch_size)
+                                                  class_mode=class_mode, batch_size=batch_size, shuffle=False)
     validation_gen = ImageDataGenerator()
     validation_dataset = validation_gen.flow_from_directory(validation_dir, target_size=target_size,
                                                             color_mode=color_mode, class_mode=class_mode,
-                                                            batch_size=batch_size)
+                                                            batch_size=batch_size, shuffle=False)
     test_gen = ImageDataGenerator()
     test_dataset = test_gen.flow_from_directory(test_dir, target_size=target_size,
                                                 color_mode=color_mode, class_mode=class_mode,
-                                                batch_size=batch_size)
+                                                batch_size=batch_size, shuffle=False)
+
+    
 
     num_of_cls = len(train_dataset.class_indices)
     train_sample_count = len(train_dataset.filenames)
@@ -557,34 +606,6 @@ def use_clf():
     input_shape = (*target_size, 3)  # 1 for grayscale or 3 for rgb
     print('input_shape = ', input_shape)
 
-    '''
-    base_model = VGG19(weights='imagenet', include_top=False, input_shape=input_shape)
-    base_model.trainable = False
-    model = Sequential()
-    model.add(base_model)
-    model.add(layers.Flatten())
-    model.add(layers.Dense(32, activation='relu'))
-    model.add(layers.Dense(1, activation='sigmoid'))
-    '''
-    '''
-    model = Sequential()
-    model.add(layers.Conv2D(30, (5, 5), input_shape=input_shape, activation='relu'))
-    model.add(layers.MaxPooling2D(8, 8))
-    model.add(layers.Conv2D(30, (3, 3), activation='relu'))
-    model.add(layers.MaxPooling2D(4, 4))
-    model.add(layers.Dropout(0.2))
-    model.add(layers.Flatten())
-    model.add(layers.Dense(128, activation='relu'))
-    model.add(layers.Dense(50, activation='relu'))
-    model.add(layers.Dense(num_of_cls, activation='softmax'))
-    model.summary()
-    model.compile(loss='binary_crossentropy',
-                  optimizer=optimizers.RMSprop(lr=learning_rate),
-                  metrics=['acc'])
-    history = model.fit(train_dataset, steps_per_epoch=steps_per_epoch, epochs=epochs, batch_size=batch_size,
-                        validation_data=validation_dataset)
-    '''
-
     datasets_names = ['train', 'validation', 'test']
     datasets_dirs = [train_dir, validation_dir, test_dir]
     datasets = [train_dataset, validation_dataset, test_dataset]
@@ -594,11 +615,11 @@ def use_clf():
         for dataset_name, dataset_dir, dataset, sample_count in zip(datasets_names, datasets_dirs, datasets,
                                                                     sample_counts):
             print('extract features for {}...'.format(dataset_name))
-            features, labels = extract_features(sample_count, dataset, batch_size, input_shape, num_of_cls)
-            save_features_labels(dataset_dir, features, labels)
-    train_features, train_labels = load_features_labels(train_dir)
-    validation_features, validation_labels = load_features_labels(validation_dir)
-    test_features, test_labels = load_features_labels(test_dir)
+            features, labels, files_paths = extract_features(sample_count, dataset, batch_size, input_shape, num_of_cls)
+            save_features_labels(dataset_dir, features, labels, files_paths)
+    train_features, train_labels, train_files_paths = load_features_labels(train_dir)
+    validation_features, validation_labels, validation_files_paths = load_features_labels(validation_dir)
+    test_features, test_labels, test_files_paths = load_features_labels(test_dir)
 
     base_model_dim = 10 * 1 * 1920
 
@@ -606,8 +627,23 @@ def use_clf():
     validation_features = np.reshape(validation_features, (validation_sample_count, base_model_dim))
     test_features = np.reshape(test_features, (test_sample_count, base_model_dim))
 
-    train_features, train_labels = shuffle_arrays(train_features, train_labels)
-    validation_features, validation_labels = shuffle_arrays(validation_features, validation_labels)
+    train_features, train_labels, train_files_paths = shuffle_arrays(train_features, train_labels, train_files_paths)
+    validation_features, validation_labels, validation_files_paths = shuffle_arrays(validation_features, validation_labels, validation_files_paths)
+
+    datasets_files_paths = [train_files_paths, validation_files_paths, test_files_paths]
+
+    train_labels_numbers = get_writers_numbers(train_labels)
+    validation_numbers = get_writers_numbers(validation_labels)
+    test_labels_numbers = get_writers_numbers(test_labels)
+
+    labels_numbers = [train_labels_numbers, validation_numbers, test_labels_numbers]
+
+    if is_show_dataset_imgs:
+        for dataset_name, dataset_labels_numbers, dataset_files_paths in zip(datasets_names, labels_numbers, datasets_files_paths):
+            images_paths = [fp for i, fp in enumerate(dataset_files_paths) if i < N_IMAGES_TO_SHOW]
+            images = np.asarray([np.asarray(Image.open(fp)) for fp in images_paths])
+            writers_labels_nums = ['Writer {}'.format(n) for n in dataset_labels_numbers[:N_IMAGES_TO_SHOW]]
+            show_9_images('{} images'.format(dataset_name), images, writers_labels_nums, images_paths)
 
     if is_grid_search_regularizer:
         kernel_regularizers = np.linspace(1e-10, 1e-5, num=5)
@@ -657,22 +693,33 @@ def use_clf():
         print('n_good_lines_preds = ', n_good_lines_preds)
         print('test_lines_acc = ', test_lines_acc)
 
-        '''
-        print('Confusion Matrix')
-        print(confusion_matrix(y_true, y_pred))
-        print('Classification Report')
-        target_names = ['Writer {}'.format(i+1) for i in range(num_of_cls)]
-        print(classification_report(y_true, y_pred, target_names=target_names))
-        avgs = precision_score(y_true, y_pred, average=None)   
-        print('avgs =', avgs)
-        bad_preds = [True if avg < 0.5 else False for avg in avgs]
-        print('bad_preds =', bad_preds)
-        n_bad_preds = len(list(filter(lambda is_bad: is_bad, bad_preds)))
-        n_good_preds = len(avgs) - n_bad_preds
-        weighted_avg = n_good_preds / len(avgs)
-        print('weighted_avg =', weighted_avg)
-        '''
+        if is_show_wrong_pred_imgs:
+            bad_preds_subarr = []
+            true_subarr = []
+            images_paths_subarr = []
+            for idx, (pred_val, true_val) in enumerate(zip(y_pred, y_true)):
+                if true_val != pred_val:
+                    bad_preds_subarr.append(pred_val)
+                    true_subarr.append(true_val)
+                    img_path = test_files_paths[idx]
+                    images_paths_subarr.append(img_path)
+            
+            images_paths = [fp for i, fp in enumerate(images_paths_subarr) if i < N_IMAGES_TO_SHOW]
+            images = np.asarray([np.asarray(Image.open(fp)) for fp in images_paths])
+            bad_preds_subarr = bad_preds_subarr[:N_IMAGES_TO_SHOW]
+            true_subarr = true_subarr[:N_IMAGES_TO_SHOW]
+            labels = ['True = {} | Pred = {}'.format(t, p) for p, t in zip(bad_preds_subarr, true_subarr)]
+            show_9_images('wrong words predictions', images, labels, images_paths)
 
+
+            '''
+            for i in range(num_of_cls):
+                if lines_c_matrix[i, i] == 0:
+                    pred_writer_label = np.argmax(lines_c_matrix[i, :])
+                    true_writer_label = i
+                    print('pred_writer_label =', pred_writer_label)
+                    print('true_writer_label =', true_writer_label)
+            '''
 
         if is_plot_history:
             epochs = history.epoch
