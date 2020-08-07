@@ -48,6 +48,8 @@ FEATURES_FILE_NAME = 'features.npy'
 LABELS_FILE_NAME = 'labels.npy'
 FILES_PATHS_FILE_NAME = 'files_paths.pickle'
 
+MODEL_FILE_NAME = 'model'
+
 ORIGINAL_IMG_W = 4964
 ORIGINAL_IMG_H = 7020
 TRAIN_DATASET_RANGE = range(1, 11)  # TODO: change `stop` to 204
@@ -59,8 +61,8 @@ MAX_WORD_H = 178
 REDUCE_WORDS = 4
 ROTATE_ANGLE = 5
 MAX_WORD_SIZE = (MAX_WORD_W, MAX_WORD_H)
-MIN_WORD_W = 40
-MIN_WORD_H = 40
+MIN_WORD_W = 80
+MIN_WORD_H = 50
 DATASET_DIM = (MAX_WORD_W // REDUCE_WORDS, MAX_WORD_H // REDUCE_WORDS)
 RELATIVE_SHIFT_IMG_SIZE = 20
 IMWRITE_JPEG_QUALITY = 100  # 0 to 100
@@ -73,6 +75,7 @@ N_IMAGES_TO_SHOW = 9
 # region Functions
 # -------------------------------------------------------------------------------------------------------------
 def full_build_dataset(imgs_dir: str):
+    '''
     print('fixing images names...')
     fix_imgs_names()
     print('finding maximum train line height...')
@@ -90,7 +93,10 @@ def full_build_dataset(imgs_dir: str):
     build_all_lines_test_dataset(imgs_dir, max_line_h=max_line_h)
     print('images lines at test dataset has built successfully')
     print('building words of images at train dataset...')
-    build_all_words_dataset(train_dir, detect_row_num=True)
+    '''
+    #build_all_words_dataset(train_dir, detect_row_num=True)
+    build_direct_train_imgs_words(imgs_dir)
+    '''
     print('train images words dataset has built successfully')
     print('building words of images at test dataset...')
     build_all_words_dataset(test_dir, detect_row_num=False)
@@ -110,6 +116,85 @@ def full_build_dataset(imgs_dir: str):
     move_words_dir(test_dir)
     print('adding data argumentation...')
     add_data_argumentation(train_dir)
+    '''
+
+# -------------------------------------------------------------------------------------------------------------
+def for_writer_img(imgs_dir: str):
+    imgs_names = [f for f in listdir(imgs_dir) if isfile(join(imgs_dir, f))]
+    for img_name in imgs_names:
+        img_num, ex = os.path.splitext(img_name)
+        if ex == '.jpg'  and img_num == '40':
+            img_num = int(img_num)
+            img_file_path = join(imgs_dir, img_name)
+            img = cv2.imread(img_file_path)
+            yield img_num, img
+
+# -------------------------------------------------------------------------------------------------------------
+def build_direct_train_imgs_words(imgs_dir: str):
+    
+    for img_num, img in for_writer_img(imgs_dir):
+        img_dir_path = join(train_dir, str(img_num))
+        print('working on image number {}...'.format(img_num))
+        line_info = load_img_lines_info(img_num=img_num)
+        y_positions = parse_y_positions(line_info)
+        top_test_area = line_info['top_test_area'].flatten()[0]
+        bottom_test_area = line_info['bottom_test_area'].flatten()[0]
+        img_no_test = cv2.rectangle(img, (0, top_test_area), (ORIGINAL_IMG_W, bottom_test_area), WHITE_COLOR, cv2.FILLED)
+
+        start_h = y_positions[0]
+        end_h = y_positions[-1]
+        crop_img = img_no_test[start_h: end_h, 0: ORIGINAL_IMG_W]
+        find_words(img_num, img_dir_path, crop_img)
+        
+        '''
+        plt_image = cv2.cvtColor(crop_img, cv2.COLOR_BGR2RGB)
+        plt.imshow(plt_image)
+        plt.show()
+        '''
+        return
+
+
+# -------------------------------------------------------------------------------------------------------------
+def find_words(img_num, img_dir_path, img):
+    shutil.rmtree(img_dir_path, ignore_errors=True)
+    Path(img_dir_path).mkdir(parents=True, exist_ok=True)
+    img_data = pytesseract.image_to_data(cv2.cvtColor(img, cv2.COLOR_BGR2RGB), lang='heb+eng', output_type=Output.DICT)
+    n_boxes = len(img_data['word_num'])
+    for i in range(n_boxes):
+        if img_data['word_num'][i] > 0:
+            (x, y, w, h) = (img_data['left'][i], img_data['top'][i], img_data['width'][i],
+                            img_data['height'][i])
+            if w < MIN_WORD_W or h < MIN_WORD_H:
+                continue
+            word_img = img[y : y + h, x : x + w]
+
+            word_img_name = '{0}_{1}.jpg'.format(img_num, i)
+            word_img_path = join(img_dir_path, word_img_name)
+            cv2.imwrite(word_img_path, word_img, [cv2.IMWRITE_JPEG_QUALITY, IMWRITE_JPEG_QUALITY])
+            #img = cv2.rectangle(img, (x, y), (x + w, y + h), (0, 0xFF, 0), 2)
+
+    '''    
+    plt_image = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    plt.imshow(plt_image)
+    plt.show()
+    '''
+
+
+def test_filter_imgs_words(dataset_dir: str):
+    img_path = join(imgs_dir, '1.jpg')
+    new_img_path = join(imgs_dir, '1_test.jpg')
+    img_data = pytesseract.image_to_data(img_path, lang='heb+eng', output_type=Output.DICT)
+    img = cv2.imread(img_path)
+    n_boxes = len(img_data['word_num'])
+    for i in range(n_boxes):
+        if img_data['word_num'][i] > 0:
+            (x, y, w, h) = (img_data['left'][i], img_data['top'][i], img_data['width'][i],
+                            img_data['height'][i])
+            img = cv2.rectangle(img, (x, y), (x + w, y + h), (0, 0xFF, 0), 2)
+    cv2.imwrite(new_img_path, img)
+    #cv2.imshow("image", img)
+    #cv2.waitKey()
+
 
 
 # -------------------------------------------------------------------------------------------------------------
@@ -517,10 +602,15 @@ def split_train_validation_datasets(imgs_dir: str, validation_size: float = 0.3)
 
 
 # -------------------------------------------------------------------------------------------------------------
-def shuffle_arrays(arr1, arr2, arr3):
+def shuffle_arrays(arr1, arr2, python_list = None):
     arr_size = arr1.shape[0]
     permutation = np.random.permutation(arr_size) - 1
-    return arr1[permutation], arr2[permutation], np.array(arr3, dtype='S')[permutation].tolist()
+    new_arr1 = arr1[permutation]
+    new_arr2 = arr2[permutation]
+    if python_list is not None:
+        new_python_list = np.array(python_list, dtype='S')[permutation].tolist()
+        return new_arr1, new_arr2, new_python_list
+    return new_arr1, new_arr2
 
 
 # -------------------------------------------------------------------------------------------------------------
@@ -556,11 +646,23 @@ def train_model(model, train_features, train_labels, epochs, batch_size,
     return history, test_loss, test_acc
 
 
+# -------------------------------------------------------------------------------------------------------------
 def get_writers_numbers(labels):
     writers_nums = np.argmax(labels, axis=1)
     writers_nums[writers_nums == 1] = 10
     writers_nums[writers_nums == 0] = 1
     return writers_nums
+
+
+# -------------------------------------------------------------------------------------------------------------
+def load_model():
+    model_file_path = join(imgs_dir, MODEL_FILE_NAME)
+    return keras.models.load_model(model_file_path)
+
+# -------------------------------------------------------------------------------------------------------------
+def save_model(model):
+    model_file_path = join(imgs_dir, MODEL_FILE_NAME)
+    model.save(model_file_path)
 
 # -------------------------------------------------------------------------------------------------------------
 def use_clf():
@@ -568,7 +670,8 @@ def use_clf():
     is_plot_history = False
     is_grid_search_regularizer = False
     is_show_wrong_pred_imgs = True
-    is_show_dataset_imgs = True
+    is_show_dataset_imgs = False
+    is_train_model = False
 
     target_size = DATASET_DIM
     print('target_size = ', target_size)
@@ -665,14 +768,18 @@ def use_clf():
         print('best_regularizer =', best_regularizer)
     else:
         kernel_regularizer = regularizers.l2(1e-4)
-        model = build_model(kernel_regularizer, base_model_dim, learning_rate, num_of_cls)
-        model.summary()
-        history, test_loss, test_acc = train_model(model=model, train_features=train_features,
-                                                   train_labels=train_labels,
-                                                   epochs=epochs, batch_size=batch_size,
-                                                   validation_features=validation_features,
-                                                   validation_labels=validation_labels, test_features=test_features,
-                                                   test_labels=test_labels)
+        if not is_train_model:
+            model = load_model()
+        else:
+            model = build_model(kernel_regularizer, base_model_dim, learning_rate, num_of_cls)
+            model.summary()
+            history, test_loss, test_acc = train_model(model=model, train_features=train_features,
+                                                    train_labels=train_labels,
+                                                    epochs=epochs, batch_size=batch_size,
+                                                    validation_features=validation_features,
+                                                    validation_labels=validation_labels, test_features=test_features,
+                                                    test_labels=test_labels)
+            save_model(model)
         y_pred = model.predict_classes(test_features, batch_size=batch_size)
         y_true = np.argmax(test_labels, axis=1)
         words_c_matrix = np.zeros(shape=(num_of_cls, num_of_cls), dtype=int)
@@ -697,19 +804,22 @@ def use_clf():
             bad_preds_subarr = []
             true_subarr = []
             images_paths_subarr = []
-            for idx, (pred_val, true_val) in enumerate(zip(y_pred, y_true)):
+            rand_y_pred, rand_y_true = shuffle_arrays(y_pred, y_true)
+            for idx, (pred_val, true_val) in enumerate(zip(rand_y_pred, rand_y_true)):
                 if true_val != pred_val:
                     bad_preds_subarr.append(pred_val)
                     true_subarr.append(true_val)
                     img_path = test_files_paths[idx]
                     images_paths_subarr.append(img_path)
             
-            images_paths = [fp for i, fp in enumerate(images_paths_subarr) if i < N_IMAGES_TO_SHOW]
+            n_wrong_preds_show = min(len(images_paths_subarr), N_IMAGES_TO_SHOW)
+            images_paths = [fp for i, fp in enumerate(images_paths_subarr) if i < n_wrong_preds_show]
             images = np.asarray([np.asarray(Image.open(fp)) for fp in images_paths])
-            bad_preds_subarr = bad_preds_subarr[:N_IMAGES_TO_SHOW]
-            true_subarr = true_subarr[:N_IMAGES_TO_SHOW]
+            bad_preds_subarr = bad_preds_subarr[:n_wrong_preds_show]
+            true_subarr = true_subarr[:n_wrong_preds_show]
+            # Note: 0 => writer 1, 1 => writer 10, 2 => writer 2, ...
             labels = ['True = {} | Pred = {}'.format(t, p) for p, t in zip(bad_preds_subarr, true_subarr)]
-            show_9_images('wrong words predictions', images, labels, images_paths)
+            show_9_images('Wrong words predictions', images, labels, images_paths)
 
 
             '''
@@ -753,8 +863,8 @@ def pad_imgs_words(dataset_dir: str, max_word_size=MAX_WORD_SIZE):
 # endregion
 
 
-is_full_build_dataset = False
-is_use_clf = True
+is_full_build_dataset = True
+is_use_clf = False
 
 imgs_dir = LINES_REMOVED_IMG_DIR
 train_dir = get_train_dir(imgs_dir)
