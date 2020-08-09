@@ -56,8 +56,8 @@ TRAIN_DATASET_RANGE = range(1, 11)  # TODO: change `stop` to 204
 MAX_TRAIN_LINE_H = 170
 MAX_TEST_LINE_H = 181
 MAX_LINE_H = max(MAX_TRAIN_LINE_H, MAX_TEST_LINE_H)
-MAX_WORD_W = 1275
-MAX_WORD_H = 178
+MAX_WORD_W = 1306
+MAX_WORD_H = 290
 REDUCE_WORDS = 4
 ROTATE_ANGLE = 5
 MAX_WORD_SIZE = (MAX_WORD_W, MAX_WORD_H)
@@ -75,87 +75,68 @@ N_IMAGES_TO_SHOW = 9
 # region Functions
 # -------------------------------------------------------------------------------------------------------------
 def full_build_dataset(imgs_dir: str):
-    '''
     print('fixing images names...')
     fix_imgs_names()
-    print('finding maximum train line height...')
-    max_train_line_h = find_max_train_line_h()
-    print('max_train_line_h =', max_train_line_h)
-    print('finding maximum test line height...')
-    max_test_line_h = find_max_test_line_h()
-    print('max_test_line_h =', max_test_line_h)
-    max_line_h = max(max_train_line_h, max_test_line_h)
-    print('max_line_h =', max_line_h)
-    print('building lines at train dataset...')
-    build_all_lines_train_dataset(imgs_dir, max_line_h=max_line_h)
-    print('images lines at train dataset has built successfully')
-    print('building lines at test dataset...')
-    build_all_lines_test_dataset(imgs_dir, max_line_h=max_line_h)
-    print('images lines at test dataset has built successfully')
     print('building words of images at train dataset...')
-    '''
-    #build_all_words_dataset(train_dir, detect_row_num=True)
-    build_direct_train_imgs_words(imgs_dir)
-    '''
-    print('train images words dataset has built successfully')
-    print('building words of images at test dataset...')
-    build_all_words_dataset(test_dir, detect_row_num=False)
-    print('test images words dataset has built successfully')
-    print('find maximum word size...')
-    max_word_size = find_max_word_size(imgs_dir)
+    build_direct_imgs_words(imgs_dir)
+    print('train and test images words dataset has built successfully')
+    max_word_size = find_max_word_size()
     print('maximum word size is', max_word_size)
+    print('padding images words at train directory...')
     pad_imgs_words(dataset_dir=train_dir, max_word_size=max_word_size)
     print('train images words dataset has padded successfully')
-    print('moving words to train directory...')
-    move_words_dir(train_dir)
-    print('splitting images to train and validation directories...')
-    split_train_validation_datasets(imgs_dir)
     print('padding images words at test directory...')
     pad_imgs_words(dataset_dir=test_dir, max_word_size=max_word_size)
-    print('moving words to test directory...')
-    move_words_dir(test_dir)
+    print('test images words dataset has padded successfully')
+    print('splitting images to train and validation directories...')
+    split_train_validation_datasets(imgs_dir)
     print('adding data argumentation...')
     add_data_argumentation(train_dir)
-    '''
 
 # -------------------------------------------------------------------------------------------------------------
 def for_writer_img(imgs_dir: str):
-    imgs_names = [f for f in listdir(imgs_dir) if isfile(join(imgs_dir, f))]
-    for img_name in imgs_names:
-        img_num, ex = os.path.splitext(img_name)
-        if ex == '.jpg'  and img_num == '40':
-            img_num = int(img_num)
-            img_file_path = join(imgs_dir, img_name)
-            img = cv2.imread(img_file_path)
-            yield img_num, img
+    for img_num in TRAIN_DATASET_RANGE:
+        img_name = '{}.jpg'.format(img_num)
+        img_file_path = join(imgs_dir, img_name)
+        img = cv2.imread(img_file_path)
+        yield img_num, img
 
 # -------------------------------------------------------------------------------------------------------------
-def build_direct_train_imgs_words(imgs_dir: str):
-    
+def build_direct_imgs_words(imgs_dir: str):
+    shutil.rmtree(train_dir, ignore_errors=True)
+    Path(train_dir).mkdir(parents=True, exist_ok=True)
+    shutil.rmtree(test_dir, ignore_errors=True)
+    Path(test_dir).mkdir(parents=True, exist_ok=True)
+
     for img_num, img in for_writer_img(imgs_dir):
-        img_dir_path = join(train_dir, str(img_num))
+        img_train_dir_path = join(train_dir, str(img_num))
+        img_test_dir_path = join(test_dir, str(img_num))
         print('working on image number {}...'.format(img_num))
         line_info = load_img_lines_info(img_num=img_num)
-        y_positions = parse_y_positions(line_info)
-        top_test_area = line_info['top_test_area'].flatten()[0]
-        bottom_test_area = line_info['bottom_test_area'].flatten()[0]
-        img_no_test = cv2.rectangle(img, (0, top_test_area), (ORIGINAL_IMG_W, bottom_test_area), WHITE_COLOR, cv2.FILLED)
-
-        start_h = y_positions[0]
-        end_h = y_positions[-1]
-        crop_img = img_no_test[start_h: end_h, 0: ORIGINAL_IMG_W]
-        find_words(img_num, img_dir_path, crop_img)
-        
-        '''
-        plt_image = cv2.cvtColor(crop_img, cv2.COLOR_BGR2RGB)
-        plt.imshow(plt_image)
-        plt.show()
-        '''
-        return
-
+        build_direct_train_img_words(img_num, img_train_dir_path, img.copy(), line_info)
+        build_direct_test_img_words(img_num, img_test_dir_path, img.copy(), line_info)
 
 # -------------------------------------------------------------------------------------------------------------
-def find_words(img_num, img_dir_path, img):
+def build_direct_train_img_words(img_num, img_dir_path, img, line_info):
+    y_positions = parse_y_positions(line_info)
+    top_test_area = line_info['top_test_area'].flatten()[0]
+    bottom_test_area = line_info['bottom_test_area'].flatten()[0]
+    img_no_test = cv2.rectangle(img, (0, top_test_area), (ORIGINAL_IMG_W, bottom_test_area), WHITE_COLOR, cv2.FILLED)
+    start_h = y_positions[0]
+    end_h = y_positions[-1]
+    crop_img = img_no_test[start_h: end_h, 0: ORIGINAL_IMG_W]
+    find_save_words(img_num, img_dir_path, crop_img)
+
+# -------------------------------------------------------------------------------------------------------------
+def build_direct_test_img_words(img_num, img_dir_path, img, line_info):
+    y_positions = parse_y_positions(line_info)
+    top_test_area = line_info['top_test_area'].flatten()[0]
+    bottom_test_area = line_info['bottom_test_area'].flatten()[0]
+    crop_img = img[top_test_area: bottom_test_area, 0: ORIGINAL_IMG_W]
+    find_save_words(img_num, img_dir_path, crop_img)
+
+# -------------------------------------------------------------------------------------------------------------
+def find_save_words(img_num: int, img_dir_path: str, img):
     shutil.rmtree(img_dir_path, ignore_errors=True)
     Path(img_dir_path).mkdir(parents=True, exist_ok=True)
     img_data = pytesseract.image_to_data(cv2.cvtColor(img, cv2.COLOR_BGR2RGB), lang='heb+eng', output_type=Output.DICT)
@@ -178,22 +159,6 @@ def find_words(img_num, img_dir_path, img):
     plt.imshow(plt_image)
     plt.show()
     '''
-
-
-def test_filter_imgs_words(dataset_dir: str):
-    img_path = join(imgs_dir, '1.jpg')
-    new_img_path = join(imgs_dir, '1_test.jpg')
-    img_data = pytesseract.image_to_data(img_path, lang='heb+eng', output_type=Output.DICT)
-    img = cv2.imread(img_path)
-    n_boxes = len(img_data['word_num'])
-    for i in range(n_boxes):
-        if img_data['word_num'][i] > 0:
-            (x, y, w, h) = (img_data['left'][i], img_data['top'][i], img_data['width'][i],
-                            img_data['height'][i])
-            img = cv2.rectangle(img, (x, y), (x + w, y + h), (0, 0xFF, 0), 2)
-    cv2.imwrite(new_img_path, img)
-    #cv2.imshow("image", img)
-    #cv2.waitKey()
 
 
 
@@ -321,6 +286,8 @@ def find_max_test_line_h():
     # print('lines height = ', lines_h)
     return max(lines_h)
 
+
+# -------------------------------------------------------------------------------------------------------------
 def show_9_images(title, the_images, the_labels, images_paths):
     if the_images.size == 0:
         return
@@ -333,7 +300,7 @@ def show_9_images(title, the_images, the_labels, images_paths):
     k = 0
     for i in range(0, 3):
         for j in range(0, 3):
-            img = the_images[k, :]
+            img = the_images[k]
             label = the_labels[k]
             img_path = images_paths[k]
             img_name = os.path.basename(img_path)
@@ -490,29 +457,27 @@ def build_words_dataset_img(dataset_dir: str, img_num: int, detect_row_num: bool
 
 
 # -------------------------------------------------------------------------------------------------------------
-def for_each_img_word(dadaset_dir: str):
-    imgs_dirs_names = [d for d in listdir(dadaset_dir) if isdir(join(dadaset_dir, d))]
+def for_each_img_word(dataset_dir: str):
+    imgs_dirs_names = [d for d in listdir(dataset_dir) if isdir(join(dataset_dir, d))]
     for img_dir_name in imgs_dirs_names:
         print('scanning image number {}...'.format(img_dir_name))
-        img_dir = join(dadaset_dir, img_dir_name)
-        words_dir = join(img_dir, 'words')
-        if not os.path.exists(words_dir):
-            break
-        imgs_words_names = [f for f in listdir(words_dir) if isfile(join(words_dir, f))]
+        img_dir = join(dataset_dir, img_dir_name)
+        imgs_words_names = [f for f in listdir(img_dir) if isfile(join(img_dir, f))]
         for img_word_name in imgs_words_names:
-            img_word_file_path = join(words_dir, img_word_name)
+            img_word_file_path = join(img_dir, img_word_name)
             img_word = Image.open(img_word_file_path)
             yield img_word_file_path, img_word
 
 
 # -------------------------------------------------------------------------------------------------------------
-def find_max_word_size(imgs_dir: str):
+def find_max_word_size():
     max_w, max_h = (0, 0)
-    train_dir = get_train_dir(imgs_dir)
-    for _, img_word in for_each_img_word(train_dir):
-        img_w, img_h = img_word.size
-        max_w = max(img_w, max_w)
-        max_h = max(img_h, max_h)
+    dataset_dirs = [train_dir, test_dir]
+    for dataset_dir in dataset_dirs:
+        for _, img_word in for_each_img_word(dataset_dir):
+            img_w, img_h = img_word.size
+            max_w = max(img_w, max_w)
+            max_h = max(img_h, max_h)
     return max_w, max_h
 
 
@@ -702,7 +667,7 @@ def use_clf():
     validation_sample_count = len(validation_dataset.filenames)
     test_sample_count = len(test_dataset.filenames)
 
-    epochs = 15
+    epochs = 5
     learning_rate = 0.0001
     # steps_per_epoch = train_sample_count // num_of_cls
 
@@ -724,7 +689,7 @@ def use_clf():
     validation_features, validation_labels, validation_files_paths = load_features_labels(validation_dir)
     test_features, test_labels, test_files_paths = load_features_labels(test_dir)
 
-    base_model_dim = 10 * 1 * 1920
+    base_model_dim = 10 * 2 * 1920
 
     train_features = np.reshape(train_features, (train_sample_count, base_model_dim))
     validation_features = np.reshape(validation_features, (validation_sample_count, base_model_dim))
@@ -863,8 +828,8 @@ def pad_imgs_words(dataset_dir: str, max_word_size=MAX_WORD_SIZE):
 # endregion
 
 
-is_full_build_dataset = True
-is_use_clf = False
+is_full_build_dataset = False
+is_use_clf = True
 
 imgs_dir = LINES_REMOVED_IMG_DIR
 train_dir = get_train_dir(imgs_dir)
