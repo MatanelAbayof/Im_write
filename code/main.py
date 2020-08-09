@@ -300,7 +300,7 @@ def show_9_images(title, the_images, the_labels, images_paths):
     k = 0
     for i in range(0, 3):
         for j in range(0, 3):
-            img = the_images[k]
+            img = the_images[k, :]
             label = the_labels[k]
             img_path = images_paths[k]
             img_name = os.path.basename(img_path)
@@ -585,11 +585,14 @@ def build_model(kernel_regularizer, base_model_dim, learning_rate, n_of_cls: int
     model = Sequential()
     #TODO: try max pooling for better performance
     #model.add(layers.MaxPool2D(pool_size=(4, 4)))
-    model.add(layers.Dense(128, activation='relu', kernel_regularizer=kernel_regularizer, bias_regularizer=bias_regularizer,
+    # dropout_rate = 0.3
+    model.add(layers.Dense(256, activation='relu', kernel_regularizer=kernel_regularizer, bias_regularizer=bias_regularizer,
                              activity_regularizer=activity_regularizer,input_dim=base_model_dim))
+    model.add(layers.Dropout(0.05))
     model.add(layers.Flatten())
-    model.add(layers.Dense(128, activation='relu', kernel_regularizer=kernel_regularizer, activity_regularizer=activity_regularizer, bias_regularizer=bias_regularizer))
-    model.add(layers.Dense(128, activation='relu', kernel_regularizer=kernel_regularizer, activity_regularizer=activity_regularizer, bias_regularizer=bias_regularizer))
+    model.add(layers.Dense(256, activation='relu', kernel_regularizer=kernel_regularizer, activity_regularizer=activity_regularizer, bias_regularizer=bias_regularizer))
+    model.add(layers.Dropout(0.05))
+    model.add(layers.Dense(256, activation='relu', kernel_regularizer=kernel_regularizer, activity_regularizer=activity_regularizer, bias_regularizer=bias_regularizer))
     model.add(layers.Dropout(0.3))
     model.add(layers.Dense(n_of_cls, activation='softmax')) # for binary use sigmoid with 1 unit. otherwise use  softmax with number of classes units
 
@@ -632,7 +635,7 @@ def save_model(model):
 # -------------------------------------------------------------------------------------------------------------
 def use_clf():
     is_extract_features = False
-    is_plot_history = False
+    is_plot_history = True
     is_grid_search_regularizer = False
     is_show_wrong_pred_imgs = True
     is_show_dataset_imgs = False
@@ -668,7 +671,7 @@ def use_clf():
     test_sample_count = len(test_dataset.filenames)
 
     epochs = 5
-    learning_rate = 0.0001
+    learning_rate = 0.00001
     # steps_per_epoch = train_sample_count // num_of_cls
 
     input_shape = (*target_size, 3)  # 1 for grayscale or 3 for rgb
@@ -756,7 +759,7 @@ def use_clf():
         print('words_c_matrix:\n', words_c_matrix)
         lines_c_matrix = np.zeros(shape=(num_of_cls, num_of_cls), dtype=int)
         for i in range(num_of_cls):
-            writer_label = np.argmax(words_c_matrix[i])
+            writer_label = np.argmax(words_c_matrix[i]).item(0)
             lines_c_matrix[i, writer_label] = 1
         print('lines_c_matrix:\n', lines_c_matrix)
         
@@ -769,12 +772,12 @@ def use_clf():
             bad_preds_subarr = []
             true_subarr = []
             images_paths_subarr = []
-            rand_y_pred, rand_y_true = shuffle_arrays(y_pred, y_true)
+            rand_y_pred, rand_y_true, rand_files_path = shuffle_arrays(y_pred, y_true, test_files_paths)
             for idx, (pred_val, true_val) in enumerate(zip(rand_y_pred, rand_y_true)):
                 if true_val != pred_val:
                     bad_preds_subarr.append(pred_val)
                     true_subarr.append(true_val)
-                    img_path = test_files_paths[idx]
+                    img_path = rand_files_path[idx]
                     images_paths_subarr.append(img_path)
             
             n_wrong_preds_show = min(len(images_paths_subarr), N_IMAGES_TO_SHOW)
@@ -796,7 +799,7 @@ def use_clf():
                     print('true_writer_label =', true_writer_label)
             '''
 
-        if is_plot_history:
+        if is_train_model and is_plot_history:
             epochs = history.epoch
             hyper_params = history.history
 
