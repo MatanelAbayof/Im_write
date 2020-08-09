@@ -22,6 +22,7 @@ from tensorflow.keras import layers, optimizers
 from sklearn.metrics import classification_report, confusion_matrix, precision_score
 from tensorflow.keras.utils import to_categorical
 import pickle
+import random
 
 pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 
@@ -52,19 +53,22 @@ MODEL_FILE_NAME = 'model'
 
 ORIGINAL_IMG_W = 4964
 ORIGINAL_IMG_H = 7020
-TRAIN_DATASET_RANGE = range(1, 11)  # TODO: change `stop` to 204
+TRAIN_DATASET_RANGE = range(1, 21)  # TODO: change `stop` to 204
 MAX_TRAIN_LINE_H = 170
 MAX_TEST_LINE_H = 181
 MAX_LINE_H = max(MAX_TRAIN_LINE_H, MAX_TEST_LINE_H)
 MAX_WORD_W = 1306
-MAX_WORD_H = 290
+MAX_WORD_H = 332
 REDUCE_WORDS = 4
-ROTATE_ANGLE = 5
+MIN_ROTATE_ANGLE = 2
+MAX_ROTATE_ANGLE = 7
+ROTATE_RANGE = range(MIN_ROTATE_ANGLE, MAX_ROTATE_ANGLE)
 MAX_WORD_SIZE = (MAX_WORD_W, MAX_WORD_H)
 MIN_WORD_W = 80
 MIN_WORD_H = 50
 DATASET_DIM = (MAX_WORD_W // REDUCE_WORDS, MAX_WORD_H // REDUCE_WORDS)
-RELATIVE_SHIFT_IMG_SIZE = 20
+REL_SHIFT_IMG_SIZE_RANGE = range(20, 40)
+BLUR_SIZE_RANGE = range(2, 7)
 IMWRITE_JPEG_QUALITY = 100  # 0 to 100
 WHITE_COLOR = (0xFF, 0xFF, 0xFF)
 N_IMAGES_TO_SHOW = 9
@@ -75,8 +79,8 @@ N_IMAGES_TO_SHOW = 9
 # region Functions
 # -------------------------------------------------------------------------------------------------------------
 def full_build_dataset(imgs_dir: str):
-    print('fixing images names...')
-    fix_imgs_names()
+    # print('fixing images names...')
+    # fix_imgs_names()
     print('building words of images at train dataset...')
     build_direct_imgs_words(imgs_dir)
     print('train and test images words dataset has built successfully')
@@ -161,13 +165,12 @@ def find_save_words(img_num: int, img_dir_path: str, img):
     '''
 
 
-
 # -------------------------------------------------------------------------------------------------------------
 def add_data_argumentation(train_dir: str):
-    shift_left_func = lambda w, h: (- w / RELATIVE_SHIFT_IMG_SIZE, 0)
-    shift_right_func = lambda w, h: (w / RELATIVE_SHIFT_IMG_SIZE, 0)
-    shift_up_func = lambda w, h: (0, -h / RELATIVE_SHIFT_IMG_SIZE)
-    shift_down_func = lambda w, h: (0, h / RELATIVE_SHIFT_IMG_SIZE)
+    shift_left_func = lambda w, h: (- w / random.choice(REL_SHIFT_IMG_SIZE_RANGE), 0)
+    shift_right_func = lambda w, h: (w / random.choice(REL_SHIFT_IMG_SIZE_RANGE), 0)
+    shift_up_func = lambda w, h: (0, -h / random.choice(REL_SHIFT_IMG_SIZE_RANGE))
+    shift_down_func = lambda w, h: (0, h / random.choice(REL_SHIFT_IMG_SIZE_RANGE))
     rotate_left_func = lambda w, h, angle, var: (w // 2, h // 2, -angle , var)
     rotate_right_func = lambda w, h, angle, var: (w // 2, h // 2, angle , var)
     rotate_funcs = {'rotate_left': rotate_left_func, 'rotate_right': rotate_right_func}
@@ -191,7 +194,7 @@ def add_data_argumentation(train_dir: str):
                 img_translation_name = '{}_{}.jpg'.format(img_name_without_ex, shift_func_name)
                 img_translation_path = join(img_dir_path, img_translation_name)
                 cv2.imwrite(img_translation_path, img_translation, [cv2.IMWRITE_JPEG_QUALITY, IMWRITE_JPEG_QUALITY])
-            angle = ROTATE_ANGLE
+            angle = random.choice(ROTATE_RANGE)
             var = 1.0
             for rotate_func_name, rotate_func in rotate_funcs.items():
                 rot_w, rot_h, rot_angle, v = rotate_func(original_w, original_h, angle, var)
@@ -203,7 +206,8 @@ def add_data_argumentation(train_dir: str):
                 img_translation_path = join(img_dir_path, img_translation_name)
                 cv2.imwrite(img_translation_path, img_translation, [cv2.IMWRITE_JPEG_QUALITY, IMWRITE_JPEG_QUALITY])
                 # cv2.imshow('{} translation'.format(shift_func_name), img_translation)
-            blur = cv2.blur(original_img,(5,5))
+            blur_size = random.choice(BLUR_SIZE_RANGE)
+            blur = cv2.blur(original_img, (blur_size, blur_size))
             img_name_without_ex = img_name[:img_name.index('.jpg')]
             img_translation_name = '{}_{}.jpg'.format(img_name_without_ex, 'blur')
             img_translation_path = join(img_dir_path, img_translation_name)
@@ -586,14 +590,16 @@ def build_model(kernel_regularizer, base_model_dim, learning_rate, n_of_cls: int
     #TODO: try max pooling for better performance
     #model.add(layers.MaxPool2D(pool_size=(4, 4)))
     # dropout_rate = 0.3
-    model.add(layers.Dense(256, activation='relu', kernel_regularizer=kernel_regularizer, bias_regularizer=bias_regularizer,
+    units = 2
+    model.add(layers.Dense(8, activation='relu', kernel_regularizer=kernel_regularizer, bias_regularizer=bias_regularizer,
                              activity_regularizer=activity_regularizer,input_dim=base_model_dim))
-    model.add(layers.Dropout(0.05))
+    #model.add(layers.Dropout(0.05))
     model.add(layers.Flatten())
-    model.add(layers.Dense(256, activation='relu', kernel_regularizer=kernel_regularizer, activity_regularizer=activity_regularizer, bias_regularizer=bias_regularizer))
-    model.add(layers.Dropout(0.05))
-    model.add(layers.Dense(256, activation='relu', kernel_regularizer=kernel_regularizer, activity_regularizer=activity_regularizer, bias_regularizer=bias_regularizer))
-    model.add(layers.Dropout(0.3))
+    #model.add(layers.Dropout(0.05))
+    for i in range(30):
+        model.add(layers.Dense(units, activation='relu', kernel_regularizer=kernel_regularizer, activity_regularizer=activity_regularizer, bias_regularizer=bias_regularizer))
+   
+    #model.add(layers.Dropout(0.3))
     model.add(layers.Dense(n_of_cls, activation='softmax')) # for binary use sigmoid with 1 unit. otherwise use  softmax with number of classes units
 
     model.compile(loss='categorical_crossentropy',
@@ -635,16 +641,16 @@ def save_model(model):
 # -------------------------------------------------------------------------------------------------------------
 def use_clf():
     is_extract_features = False
-    is_plot_history = True
+    is_plot_history = False
     is_grid_search_regularizer = False
-    is_show_wrong_pred_imgs = True
+    is_show_wrong_pred_imgs = False
     is_show_dataset_imgs = False
-    is_train_model = False
+    is_train_model = True
 
     target_size = DATASET_DIM
     print('target_size = ', target_size)
 
-    batch_size = 30
+    batch_size = 20
 
     # create a data generator
     # shift_side = 0.1
@@ -671,7 +677,7 @@ def use_clf():
     test_sample_count = len(test_dataset.filenames)
 
     epochs = 5
-    learning_rate = 0.00001
+    learning_rate = 0.000001
     # steps_per_epoch = train_sample_count // num_of_cls
 
     input_shape = (*target_size, 3)  # 1 for grayscale or 3 for rgb
@@ -735,7 +741,7 @@ def use_clf():
                 best_regularizer = kernel_regularizer_val
         print('best_regularizer =', best_regularizer)
     else:
-        kernel_regularizer = regularizers.l2(1e-4)
+        kernel_regularizer = None
         if not is_train_model:
             model = load_model()
         else:
