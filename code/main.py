@@ -31,9 +31,6 @@ CURRENT_DIR = os.path.dirname(__file__)
 WORKING_DIR = Path(CURRENT_DIR).parent
 os.chdir(WORKING_DIR)
 
-TRAIN_FEATURES_FILE_NAME = "train_features"
-TRAIN_LABELS_FILE_NAME = "train_labels"
-
 IMG_ROOT_DIR = 'data'
 ORIGINAL_IMG_DIR = join(IMG_ROOT_DIR, '0_Images')
 ROTATED_IMG_DIR = join(IMG_ROOT_DIR, '1_ImagesRotated')
@@ -68,7 +65,8 @@ MIN_WORD_W = 80
 MIN_WORD_H = 50
 DATASET_DIM = (MAX_WORD_W // REDUCE_WORDS, MAX_WORD_H // REDUCE_WORDS)
 REL_SHIFT_IMG_SIZE_RANGE = range(20, 40)
-BLUR_SIZE_RANGE = range(2, 7)
+BLUR_SIZE_RANGE = range(2, 10)
+SCALE_PERCENT_RANGE = range(1, 10)
 IMWRITE_JPEG_QUALITY = 100  # 0 to 100
 WHITE_COLOR = (0xFF, 0xFF, 0xFF)
 N_IMAGES_TO_SHOW = 9
@@ -81,6 +79,7 @@ N_IMAGES_TO_SHOW = 9
 def full_build_dataset(imgs_dir: str):
     # print('fixing images names...')
     # fix_imgs_names()
+    '''
     print('building words of images at train dataset...')
     build_direct_imgs_words(imgs_dir)
     print('train and test images words dataset has built successfully')
@@ -95,6 +94,7 @@ def full_build_dataset(imgs_dir: str):
     print('splitting images to train and validation directories...')
     split_train_validation_datasets(imgs_dir)
     print('adding data argumentation...')
+    '''
     add_data_argumentation(train_dir)
 
 # -------------------------------------------------------------------------------------------------------------
@@ -133,7 +133,6 @@ def build_direct_train_img_words(img_num, img_dir_path, img, line_info):
 
 # -------------------------------------------------------------------------------------------------------------
 def build_direct_test_img_words(img_num, img_dir_path, img, line_info):
-    y_positions = parse_y_positions(line_info)
     top_test_area = line_info['top_test_area'].flatten()[0]
     bottom_test_area = line_info['bottom_test_area'].flatten()[0]
     crop_img = img[top_test_area: bottom_test_area, 0: ORIGINAL_IMG_W]
@@ -186,34 +185,47 @@ def add_data_argumentation(train_dir: str):
             original_h, original_w = original_img.shape[:2]
             # cv2.imshow("Originalimage", original_img)
             for shift_func_name, shift_func in shift_funcs.items():
-                shift_w, shift_h = shift_func(original_w, original_h)
-                M = np.float32([[1, 0, shift_w], [0, 1, shift_h]])
-                img_translation = cv2.warpAffine(src=original_img, M=M, dsize=(original_w, original_h),
-                                                 borderValue=WHITE_COLOR)
-                img_name_without_ex = img_name[:img_name.index('.jpg')]
-                img_translation_name = '{}_{}.jpg'.format(img_name_without_ex, shift_func_name)
-                img_translation_path = join(img_dir_path, img_translation_name)
-                cv2.imwrite(img_translation_path, img_translation, [cv2.IMWRITE_JPEG_QUALITY, IMWRITE_JPEG_QUALITY])
+                if bool(random.getrandbits(1)):
+                    shift_w, shift_h = shift_func(original_w, original_h)
+                    M = np.float32([[1, 0, shift_w], [0, 1, shift_h]])
+                    img_translation = cv2.warpAffine(src=original_img, M=M, dsize=(original_w, original_h),
+                                                    borderValue=WHITE_COLOR)
+                    img_name_without_ex = img_name[:img_name.index('.jpg')]
+                    img_translation_name = '{}_{}.jpg'.format(img_name_without_ex, shift_func_name)
+                    img_translation_path = join(img_dir_path, img_translation_name)
+                    cv2.imwrite(img_translation_path, img_translation, [cv2.IMWRITE_JPEG_QUALITY, IMWRITE_JPEG_QUALITY])
             angle = random.choice(ROTATE_RANGE)
             var = 1.0
             for rotate_func_name, rotate_func in rotate_funcs.items():
-                rot_w, rot_h, rot_angle, v = rotate_func(original_w, original_h, angle, var)
-                M = cv2.getRotationMatrix2D((rot_w, rot_h), rot_angle, v)
-                img_translation = cv2.warpAffine(src=original_img, M=M, dsize=(original_w, original_h),
-                                                 borderValue=WHITE_COLOR)
-                img_name_without_ex = img_name[:img_name.index('.jpg')]
-                img_translation_name = '{}_{}.jpg'.format(img_name_without_ex, rotate_func_name)
-                img_translation_path = join(img_dir_path, img_translation_name)
-                cv2.imwrite(img_translation_path, img_translation, [cv2.IMWRITE_JPEG_QUALITY, IMWRITE_JPEG_QUALITY])
-                # cv2.imshow('{} translation'.format(shift_func_name), img_translation)
+                if bool(random.getrandbits(1)):
+                    rot_w, rot_h, rot_angle, v = rotate_func(original_w, original_h, angle, var)
+                    M = cv2.getRotationMatrix2D((rot_w, rot_h), rot_angle, v)
+                    img_translation = cv2.warpAffine(src=original_img, M=M, dsize=(original_w, original_h),
+                                                    borderValue=WHITE_COLOR)
+                    img_name_without_ex = img_name[:img_name.index('.jpg')]
+                    img_translation_name = '{}_{}.jpg'.format(img_name_without_ex, rotate_func_name)
+                    img_translation_path = join(img_dir_path, img_translation_name)
+                    cv2.imwrite(img_translation_path, img_translation, [cv2.IMWRITE_JPEG_QUALITY, IMWRITE_JPEG_QUALITY])
+
             blur_size = random.choice(BLUR_SIZE_RANGE)
             blur = cv2.blur(original_img, (blur_size, blur_size))
             img_name_without_ex = img_name[:img_name.index('.jpg')]
             img_translation_name = '{}_{}.jpg'.format(img_name_without_ex, 'blur')
             img_translation_path = join(img_dir_path, img_translation_name)
             cv2.imwrite(img_translation_path, blur, [cv2.IMWRITE_JPEG_QUALITY, IMWRITE_JPEG_QUALITY])
-            # cv2.waitKey()
-            # cv2.destroyAllWindows()
+
+            scale_percent = random.choice(SCALE_PERCENT_RANGE)
+            scale_factor = scale_percent / 100
+            scale_start_w = int(original_w * scale_factor)
+            scale_end_w = original_w - scale_start_w
+            scale_start_h = int(original_h * scale_factor)
+            scale_end_h = original_h - scale_start_h
+            cropped_scaled_img = original_img[scale_start_h : scale_end_h, scale_start_w : scale_end_w]
+            resized_img = cv2.resize(src=cropped_scaled_img, dsize=(original_w, original_h), interpolation=cv2.INTER_AREA)
+            resized_img_name = '{}_{}.jpg'.format(img_name_without_ex, 'scale')
+            resized_img_path = join(img_dir_path, resized_img_name)
+            cv2.imwrite(resized_img_path, resized_img, [cv2.IMWRITE_JPEG_QUALITY, IMWRITE_JPEG_QUALITY])
+            
 
 
 # -------------------------------------------------------------------------------------------------------------
@@ -590,16 +602,18 @@ def build_model(kernel_regularizer, base_model_dim, learning_rate, n_of_cls: int
     #TODO: try max pooling for better performance
     #model.add(layers.MaxPool2D(pool_size=(4, 4)))
     # dropout_rate = 0.3
-    units = 2
-    model.add(layers.Dense(8, activation='relu', kernel_regularizer=kernel_regularizer, bias_regularizer=bias_regularizer,
+    units = 128
+    dropout_rate = 0.05
+    model.add(layers.Dense(units, activation='relu', kernel_regularizer=kernel_regularizer, bias_regularizer=bias_regularizer,
                              activity_regularizer=activity_regularizer,input_dim=base_model_dim))
-    #model.add(layers.Dropout(0.05))
+    #model.add(layers.Dropout(dropout_rate))
     model.add(layers.Flatten())
-    #model.add(layers.Dropout(0.05))
-    for i in range(30):
-        model.add(layers.Dense(units, activation='relu', kernel_regularizer=kernel_regularizer, activity_regularizer=activity_regularizer, bias_regularizer=bias_regularizer))
-   
-    #model.add(layers.Dropout(0.3))
+    model.add(layers.Dense(units, activation='relu', kernel_regularizer=kernel_regularizer, activity_regularizer=activity_regularizer, bias_regularizer=bias_regularizer))
+    #model.add(layers.Dropout(dropout_rate))
+    model.add(layers.Dense(units, activation='relu', kernel_regularizer=kernel_regularizer, activity_regularizer=activity_regularizer, bias_regularizer=bias_regularizer))
+    #model.add(layers.Dropout(dropout_rate))
+    model.add(layers.Dense(units, activation='relu', kernel_regularizer=kernel_regularizer, activity_regularizer=activity_regularizer, bias_regularizer=bias_regularizer))
+    #model.add(layers.Dropout(0.2))
     model.add(layers.Dense(n_of_cls, activation='softmax')) # for binary use sigmoid with 1 unit. otherwise use  softmax with number of classes units
 
     model.compile(loss='categorical_crossentropy',
