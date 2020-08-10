@@ -70,6 +70,7 @@ SCALE_PERCENT_RANGE = range(1, 10)
 IMWRITE_JPEG_QUALITY = 100  # 0 to 100
 WHITE_COLOR = (0xFF, 0xFF, 0xFF)
 N_IMAGES_TO_SHOW = 9
+MIN_WORDS_TEST_DATASET = 5
 
 
 # endregion
@@ -79,7 +80,6 @@ N_IMAGES_TO_SHOW = 9
 def full_build_dataset(imgs_dir: str):
     # print('fixing images names...')
     # fix_imgs_names()
-    '''
     print('building words of images at train dataset...')
     build_direct_imgs_words(imgs_dir)
     print('train and test images words dataset has built successfully')
@@ -92,10 +92,9 @@ def full_build_dataset(imgs_dir: str):
     pad_imgs_words(dataset_dir=test_dir, max_word_size=max_word_size)
     print('test images words dataset has padded successfully')
     print('splitting images to train and validation directories...')
-    split_train_validation_datasets(imgs_dir)
+    #split_train_validation_datasets(imgs_dir)
     print('adding data argumentation...')
-    '''
-    add_data_argumentation(train_dir)
+    # add_data_argumentation(train_dir)
 
 # -------------------------------------------------------------------------------------------------------------
 def for_writer_img(imgs_dir: str):
@@ -117,11 +116,19 @@ def build_direct_imgs_words(imgs_dir: str):
         img_test_dir_path = join(test_dir, str(img_num))
         print('working on image number {}...'.format(img_num))
         line_info = load_img_lines_info(img_num=img_num)
-        build_direct_train_img_words(img_num, img_train_dir_path, img.copy(), line_info)
-        build_direct_test_img_words(img_num, img_test_dir_path, img.copy(), line_info)
+        img_check_file_path = join(LINES_REMOVED_BW_IMG_DIR, '{}.jpg'.format(img_num))
+        img_check = cv2.imread(img_check_file_path)
+        build_direct_train_img_words(img_num, img_train_dir_path, img.copy(), img_check.copy(), line_info)
+        build_direct_test_img_words(img_num, img_test_dir_path, img.copy(), img_check.copy(), line_info)
 
 # -------------------------------------------------------------------------------------------------------------
-def build_direct_train_img_words(img_num, img_dir_path, img, line_info):
+def build_direct_train_img_words(img_num, img_dir_path, img, img_check, line_info):  
+    train_img = crop_train_img(line_info, img)
+    train_img_check = crop_train_img(line_info, img)
+    find_save_words(img_num, img_dir_path, train_img, train_img_check)
+
+# -------------------------------------------------------------------------------------------------------------
+def crop_train_img(line_info, img):
     y_positions = parse_y_positions(line_info)
     top_test_area = line_info['top_test_area'].flatten()[0]
     bottom_test_area = line_info['bottom_test_area'].flatten()[0]
@@ -129,39 +136,44 @@ def build_direct_train_img_words(img_num, img_dir_path, img, line_info):
     start_h = y_positions[0]
     end_h = y_positions[-1]
     crop_img = img_no_test[start_h: end_h, 0: ORIGINAL_IMG_W]
-    find_save_words(img_num, img_dir_path, crop_img)
+    return crop_img
 
 # -------------------------------------------------------------------------------------------------------------
-def build_direct_test_img_words(img_num, img_dir_path, img, line_info):
+def build_direct_test_img_words(img_num, img_dir_path, img, img_check, line_info):
     top_test_area = line_info['top_test_area'].flatten()[0]
     bottom_test_area = line_info['bottom_test_area'].flatten()[0]
     crop_img = img[top_test_area: bottom_test_area, 0: ORIGINAL_IMG_W]
-    find_save_words(img_num, img_dir_path, crop_img)
+    crop_img_check = img_check[top_test_area: bottom_test_area, 0: ORIGINAL_IMG_W]
+    find_save_words(img_num, img_dir_path, crop_img, crop_img_check)
 
 # -------------------------------------------------------------------------------------------------------------
-def find_save_words(img_num: int, img_dir_path: str, img):
+def find_save_words(img_num: int, img_dir_path: str, img, img_check):
     shutil.rmtree(img_dir_path, ignore_errors=True)
     Path(img_dir_path).mkdir(parents=True, exist_ok=True)
-    img_data = pytesseract.image_to_data(cv2.cvtColor(img, cv2.COLOR_BGR2RGB), lang='heb+eng', output_type=Output.DICT)
+    img_data = pytesseract.image_to_data(cv2.cvtColor(img_check, cv2.COLOR_BGR2RGB), lang='heb', output_type=Output.DICT)
     n_boxes = len(img_data['word_num'])
+    n_words = 0
     for i in range(n_boxes):
         if img_data['word_num'][i] > 0:
             (x, y, w, h) = (img_data['left'][i], img_data['top'][i], img_data['width'][i],
                             img_data['height'][i])
-            if w < MIN_WORD_W or h < MIN_WORD_H:
-                continue
+            
             word_img = img[y : y + h, x : x + w]
+
+            if is_white_img(Image.fromarray(cv2.cvtColor(word_img, cv2.COLOR_BGR2RGB))) or (w < MIN_WORD_W or h < MIN_WORD_H):
+                continue
 
             word_img_name = '{0}_{1}.jpg'.format(img_num, i)
             word_img_path = join(img_dir_path, word_img_name)
             cv2.imwrite(word_img_path, word_img, [cv2.IMWRITE_JPEG_QUALITY, IMWRITE_JPEG_QUALITY])
+            n_words += 1
             #img = cv2.rectangle(img, (x, y), (x + w, y + h), (0, 0xFF, 0), 2)
 
-    '''    
-    plt_image = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    plt.imshow(plt_image)
+    '''   
+    plt.imshow(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
     plt.show()
     '''
+    
 
 
 # -------------------------------------------------------------------------------------------------------------
@@ -603,7 +615,7 @@ def build_model(kernel_regularizer, base_model_dim, learning_rate, n_of_cls: int
     #model.add(layers.MaxPool2D(pool_size=(4, 4)))
     # dropout_rate = 0.3
     units = 256
-    dropout_rate = 0.05
+    dropout_rate = 0.01
     model.add(layers.Dense(units, activation='relu', kernel_regularizer=kernel_regularizer, bias_regularizer=bias_regularizer,
                              activity_regularizer=activity_regularizer,input_dim=base_model_dim))
     #model.add(layers.Dropout(dropout_rate))
@@ -613,7 +625,7 @@ def build_model(kernel_regularizer, base_model_dim, learning_rate, n_of_cls: int
     model.add(layers.Dense(units, activation='relu', kernel_regularizer=kernel_regularizer, activity_regularizer=activity_regularizer, bias_regularizer=bias_regularizer))
     #model.add(layers.Dropout(dropout_rate))
     model.add(layers.Dense(units, activation='relu', kernel_regularizer=kernel_regularizer, activity_regularizer=activity_regularizer, bias_regularizer=bias_regularizer))
-    #model.add(layers.Dropout(0.2))
+    model.add(layers.Dropout(0.2))
     model.add(layers.Dense(n_of_cls, activation='softmax')) # for binary use sigmoid with 1 unit. otherwise use  softmax with number of classes units
 
     model.compile(loss='categorical_crossentropy',
@@ -690,7 +702,7 @@ def use_clf():
     validation_sample_count = len(validation_dataset.filenames)
     test_sample_count = len(test_dataset.filenames)
 
-    epochs = 5
+    epochs = 8
     learning_rate = 0.0001
     # steps_per_epoch = train_sample_count // num_of_cls
 
@@ -755,7 +767,8 @@ def use_clf():
                 best_regularizer = kernel_regularizer_val
         print('best_regularizer =', best_regularizer)
     else:
-        kernel_regularizer = None
+        kernel_regularizer_val = 1e-7
+        kernel_regularizer = regularizers.l2(kernel_regularizer_val)
         if not is_train_model:
             model = load_model()
         else:
@@ -851,8 +864,8 @@ def pad_imgs_words(dataset_dir: str, max_word_size=MAX_WORD_SIZE):
 # endregion
 
 
-is_full_build_dataset = False
-is_use_clf = True
+is_full_build_dataset = True
+is_use_clf = False
 
 imgs_dir = LINES_REMOVED_IMG_DIR
 train_dir = get_train_dir(imgs_dir)
