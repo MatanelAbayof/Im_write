@@ -608,14 +608,14 @@ def shuffle_arrays(arr1, arr2, python_list = None):
 
 # -------------------------------------------------------------------------------------------------------------
 def build_model(kernel_regularizer, base_model_dim, learning_rate, n_of_cls: int):
-    bias_regularizer= None # regularizers.l2(1e-8)
-    activity_regularizer= None # regularizers.l2(1e-5)
+    bias_regularizer = None # regularizers.l2(1e-8)
+    activity_regularizer = None # regularizers.l2(1e-8)
     model = Sequential()
     #TODO: try max pooling for better performance
     #model.add(layers.MaxPool2D(pool_size=(4, 4)))
     # dropout_rate = 0.3
     units = 256
-    dropout_rate = 0.01
+    # dropout_rate = 0.05
     model.add(layers.Dense(units, activation='relu', kernel_regularizer=kernel_regularizer, bias_regularizer=bias_regularizer,
                              activity_regularizer=activity_regularizer,input_dim=base_model_dim))
     #model.add(layers.Dropout(dropout_rate))
@@ -669,9 +669,9 @@ def use_clf():
     is_extract_features = False
     is_plot_history = False
     is_grid_search_regularizer = False
-    is_show_wrong_pred_imgs = False
+    is_show_wrong_pred_imgs = True
     is_show_dataset_imgs = False
-    is_train_model = True
+    is_train_model = False
 
     target_size = DATASET_DIM
     print('target_size = ', target_size)
@@ -749,7 +749,7 @@ def use_clf():
             show_9_images('{} images'.format(dataset_name), images, writers_labels_nums, images_paths)
 
     if is_grid_search_regularizer:
-        kernel_regularizers = np.linspace(1e-10, 1e-5, num=5)
+        kernel_regularizers = np.linspace(1e-10, 1e-1, num=3)
         best_acc = 0
         best_regularizer = None
         for kernel_regularizer_val in kernel_regularizers:
