@@ -80,6 +80,7 @@ MIN_WORDS_TEST_DATASET = 5
 def full_build_dataset(imgs_dir: str):
     # print('fixing images names...')
     # fix_imgs_names()
+    '''
     print('building words of images at train dataset...')
     build_direct_imgs_words(imgs_dir)
     print('train and test images words dataset has built successfully')
@@ -92,9 +93,10 @@ def full_build_dataset(imgs_dir: str):
     pad_imgs_words(dataset_dir=test_dir, max_word_size=max_word_size)
     print('test images words dataset has padded successfully')
     print('splitting images to train and validation directories...')
-    #split_train_validation_datasets(imgs_dir)
+    '''
+    split_train_validation_datasets(imgs_dir)
     print('adding data argumentation...')
-    # add_data_argumentation(train_dir)
+    add_data_argumentation(train_dir)
 
 # -------------------------------------------------------------------------------------------------------------
 def for_writer_img(imgs_dir: str):
@@ -671,7 +673,7 @@ def use_clf():
     is_grid_search_regularizer = False
     is_show_wrong_pred_imgs = True
     is_show_dataset_imgs = False
-    is_train_model = False
+    is_train_model = True
 
     target_size = DATASET_DIM
     print('target_size = ', target_size)
@@ -702,7 +704,7 @@ def use_clf():
     validation_sample_count = len(validation_dataset.filenames)
     test_sample_count = len(test_dataset.filenames)
 
-    epochs = 8
+    epochs = 3
     learning_rate = 0.0001
     # steps_per_epoch = train_sample_count // num_of_cls
 
@@ -864,8 +866,8 @@ def pad_imgs_words(dataset_dir: str, max_word_size=MAX_WORD_SIZE):
 # endregion
 
 
-is_full_build_dataset = True
-is_use_clf = False
+is_full_build_dataset = False
+is_use_clf = True
 
 imgs_dir = LINES_REMOVED_IMG_DIR
 train_dir = get_train_dir(imgs_dir)
