@@ -602,7 +602,7 @@ def build_model(kernel_regularizer, base_model_dim, learning_rate, n_of_cls: int
     #TODO: try max pooling for better performance
     #model.add(layers.MaxPool2D(pool_size=(4, 4)))
     # dropout_rate = 0.3
-    units = 128
+    units = 256
     dropout_rate = 0.05
     model.add(layers.Dense(units, activation='relu', kernel_regularizer=kernel_regularizer, bias_regularizer=bias_regularizer,
                              activity_regularizer=activity_regularizer,input_dim=base_model_dim))
@@ -691,7 +691,7 @@ def use_clf():
     test_sample_count = len(test_dataset.filenames)
 
     epochs = 5
-    learning_rate = 0.000001
+    learning_rate = 0.0001
     # steps_per_epoch = train_sample_count // num_of_cls
 
     input_shape = (*target_size, 3)  # 1 for grayscale or 3 for rgb
