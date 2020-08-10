@@ -673,7 +673,7 @@ def use_clf():
     is_grid_search_regularizer = False
     is_show_wrong_pred_imgs = True
     is_show_dataset_imgs = False
-    is_train_model = False
+    is_train_model = True
 
     target_size = DATASET_DIM
     print('target_size = ', target_size)
@@ -704,7 +704,7 @@ def use_clf():
     validation_sample_count = len(validation_dataset.filenames)
     test_sample_count = len(test_dataset.filenames)
 
-    epochs = 7
+    epochs = 12
     learning_rate = 0.00005
     # steps_per_epoch = train_sample_count // num_of_cls
 
