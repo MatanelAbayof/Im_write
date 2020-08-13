@@ -673,7 +673,7 @@ def use_clf():
     is_grid_search_regularizer = False
     is_show_wrong_pred_imgs = True
     is_show_dataset_imgs = False
-    is_train_model = True
+    is_train_model = False
 
     target_size = DATASET_DIM
     print('target_size = ', target_size)
