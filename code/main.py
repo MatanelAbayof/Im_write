@@ -40,7 +40,7 @@ LINES_REMOVED_IMG_DIR = join(IMG_ROOT_DIR, '4_ImagesLinesRemoved')
 IMG_POSITIONS_DIR = join(IMG_ROOT_DIR, '5_DataDarkLines')
 ALEX_WEIGHTS_PATH = join(IMG_ROOT_DIR, 'alexnet_weights.h5')
 IMG_DIRECTORIES = [ORIGINAL_IMG_DIR, LINES_REMOVED_BW_IMG_DIR, LINES_REMOVED_IMG_DIR,
-                   IMG_POSITIONS_DIR]  # TODO: do this for each images directories (IMG_POSITIONS_DIR must be the last item)
+                   IMG_POSITIONS_DIR]
 
 FEATURES_FILE_NAME = 'features.npy'
 LABELS_FILE_NAME = 'labels.npy'
@@ -50,7 +50,7 @@ MODEL_FILE_NAME = 'model'
 
 ORIGINAL_IMG_W = 4964
 ORIGINAL_IMG_H = 7020
-TRAIN_DATASET_RANGE = range(1, 21)  # TODO: change `stop` to 204
+TRAIN_DATASET_RANGE = range(1, 21)
 MAX_TRAIN_LINE_H = 170
 MAX_TEST_LINE_H = 181
 MAX_LINE_H = max(MAX_TRAIN_LINE_H, MAX_TEST_LINE_H)
@@ -78,9 +78,8 @@ MIN_WORDS_TEST_DATASET = 5
 # region Functions
 # -------------------------------------------------------------------------------------------------------------
 def full_build_dataset(imgs_dir: str):
-    # print('fixing images names...')
-    # fix_imgs_names()
-    '''
+    print('fixing images names...')
+    fix_imgs_names()
     print('building words of images at train dataset...')
     build_direct_imgs_words(imgs_dir)
     print('train and test images words dataset has built successfully')
@@ -93,7 +92,6 @@ def full_build_dataset(imgs_dir: str):
     pad_imgs_words(dataset_dir=test_dir, max_word_size=max_word_size)
     print('test images words dataset has padded successfully')
     print('splitting images to train and validation directories...')
-    '''
     split_train_validation_datasets(imgs_dir)
     print('adding data argumentation...')
     add_data_argumentation(train_dir)
@@ -170,11 +168,8 @@ def find_save_words(img_num: int, img_dir_path: str, img, img_check):
             cv2.imwrite(word_img_path, word_img, [cv2.IMWRITE_JPEG_QUALITY, IMWRITE_JPEG_QUALITY])
             n_words += 1
             #img = cv2.rectangle(img, (x, y), (x + w, y + h), (0, 0xFF, 0), 2)
-
-    '''   
-    plt.imshow(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
-    plt.show()
-    '''
+    #plt.imshow(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+    #plt.show()
     
 
 
@@ -278,7 +273,7 @@ def get_test_dir(imgs_dir: str):
 
 
 # -------------------------------------------------------------------------------------------------------------
-def is_white_img(img: Image):  # TODO: improve run time
+def is_white_img(img: Image):
     img_w, img_h = img.size
     not_white_pixels = []
     for i in range(1, img_w):
@@ -419,11 +414,8 @@ def build_lines_train_dataset_img(imgs_dir: str, img_num: int, max_line_h=MAX_LI
 # -------------------------------------------------------------------------------------------------------------
 def build_all_lines_test_dataset(imgs_dir: str, max_line_h=MAX_LINE_H):
     test_dir = get_test_dir(imgs_dir)
-    # removing directory
     shutil.rmtree(test_dir, ignore_errors=True)
-    # create an empty directory
     Path(test_dir).mkdir(parents=True, exist_ok=True)
-
     for img_num in TRAIN_DATASET_RANGE:
         build_lines_test_dataset_img(img_dir=imgs_dir, img_num=img_num, max_line_h=max_line_h)
 
@@ -610,22 +602,15 @@ def shuffle_arrays(arr1, arr2, python_list = None):
 
 # -------------------------------------------------------------------------------------------------------------
 def build_model(kernel_regularizer, base_model_dim, learning_rate, n_of_cls: int):
-    bias_regularizer = None # regularizers.l2(1e-8)
-    activity_regularizer = None # regularizers.l2(1e-8)
+    bias_regularizer = None
+    activity_regularizer = None
     model = Sequential()
-    #TODO: try max pooling for better performance
-    #model.add(layers.MaxPool2D(pool_size=(4, 4)))
-    # dropout_rate = 0.3
     units = 256
-    # dropout_rate = 0.05
     model.add(layers.Dense(units, activation='relu', kernel_regularizer=kernel_regularizer, bias_regularizer=bias_regularizer,
                              activity_regularizer=activity_regularizer,input_dim=base_model_dim))
-    #model.add(layers.Dropout(dropout_rate))
     model.add(layers.Flatten())
     model.add(layers.Dense(units, activation='relu', kernel_regularizer=kernel_regularizer, activity_regularizer=activity_regularizer, bias_regularizer=bias_regularizer))
-    #model.add(layers.Dropout(dropout_rate))
     model.add(layers.Dense(units, activation='relu', kernel_regularizer=kernel_regularizer, activity_regularizer=activity_regularizer, bias_regularizer=bias_regularizer))
-    #model.add(layers.Dropout(dropout_rate))
     model.add(layers.Dense(units, activation='relu', kernel_regularizer=kernel_regularizer, activity_regularizer=activity_regularizer, bias_regularizer=bias_regularizer))
     model.add(layers.Dropout(0.2))
     model.add(layers.Dense(n_of_cls, activation='softmax')) # for binary use sigmoid with 1 unit. otherwise use  softmax with number of classes units
@@ -669,7 +654,7 @@ def save_model(model):
 # -------------------------------------------------------------------------------------------------------------
 def use_clf():
     is_extract_features = False
-    is_plot_history = False
+    is_plot_history = True
     is_grid_search_regularizer = False
     is_show_wrong_pred_imgs = True
     is_show_dataset_imgs = False
@@ -680,8 +665,6 @@ def use_clf():
 
     batch_size = 20
 
-    # create a data generator
-    # shift_side = 0.1
     # train_gen = ImageDataGenerator(rotation_range=2, width_shift_range=shift_side, height_shift_range=shift_side)
     train_gen = ImageDataGenerator()
     color_mode = 'rgb' # VGGxx want rgb!
@@ -706,7 +689,6 @@ def use_clf():
 
     epochs = 12
     learning_rate = 0.00005
-    # steps_per_epoch = train_sample_count // num_of_cls
 
     input_shape = (*target_size, 3)  # 1 for grayscale or 3 for rgb
     print('input_shape = ', input_shape)
